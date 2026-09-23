@@ -21,6 +21,20 @@
   letter-spacing: -0.04em;
   font-weight: 600;
 }
+.balance-coverage {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) auto minmax(220px, 1fr);
+  align-items: center;
+  gap: 16px;
+  margin-top: 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.balance-coverage strong { color: var(--foreground); font-size: 13px; }
+.balance-coverage small { text-align: right; }
 .allocation-bar {
   display: flex;
   height: 7px;
@@ -237,6 +251,9 @@
   line-height: 1.8;
   max-width: 850px;
 }
+.flow-counterparty { display: grid; gap: 4px; }
+.flow-counterparty small { color: var(--text-muted); font-size: 10px; }
+.flow-source { margin-top: 14px; color: var(--text-muted); font-size: 10px; }
 .flow-value-button {
   padding: 5px 8px;
   border: 0;
@@ -265,6 +282,8 @@
   color: var(--text-secondary);
 }
 @media (max-width: 600px) {
+  .balance-coverage { grid-template-columns: 1fr auto; }
+  .balance-coverage small { grid-column: 1 / -1; text-align: left; }
   .flow-totals {
     gap: 14px;
     grid-template-columns: 1fr;

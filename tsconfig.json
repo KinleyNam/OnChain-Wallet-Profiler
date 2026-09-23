@@ -34,6 +34,7 @@
     "components/**/*.tsx",
     "hooks/**/*.ts",
     "lib/**/*.ts",
+    "server/**/*.ts",
     "vite.config.ts"
   ],
   "exclude": [

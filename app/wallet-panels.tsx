@@ -14,7 +14,6 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import {
-  assets,
   quantity,
   shortAddress,
   timestamp,
@@ -71,12 +70,15 @@ function Pager({
 }
 
 export function BalancesPanel({ data }: { data: WalletData }) {
+  const [page, setPage] = useState(0);
+  const currentPage = Math.min(page, Math.max(0, Math.ceil(data.holdings.length / PAGE_SIZE) - 1));
+
   return (
     <section className="panel holdings-panel">
       <div className="panel-heading">
         <div>
           <h2>Assets on Ethereum</h2>
-          <p>ETH and ERC-20 tokens held on Ethereum · as of Sep 10, 2026</p>
+          <p>ETH and ERC-20 tokens held on Ethereum · as of {new Date(data.asOf).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}</p>
         </div>
         <span className="holdings-count">{data.holdings.length} assets</span>
       </div>
@@ -85,12 +87,25 @@ export function BalancesPanel({ data }: { data: WalletData }) {
         <strong>{usd(data.totalBalance)}</strong>
         <small>Ethereum holdings valued in USD at the snapshot date</small>
       </div>
+      <div className="balance-coverage">
+        <span>Historical balance records</span>
+        <strong>
+          {data.enrichmentCoverage.historicalBalances
+            ? data.historicalBalances.length.toLocaleString()
+            : 'Unavailable'}
+        </strong>
+        <small>
+          {data.enrichmentCoverage.historicalBalances
+            ? `Across ${new Set(data.historicalBalances.map((item) => item.tokenAddress)).size.toLocaleString()} assets in the selected period`
+            : 'The current balance remains available'}
+        </small>
+      </div>
       <div className="allocation-bar" aria-hidden="true">
         {data.holdings.map((h) => (
           <span
-            key={h.symbol}
+            key={h.tokenAddress}
             style={{
-              width: `${(h.value / data.totalBalance) * 100}%`,
+              width: `${data.totalBalance ? (h.value / data.totalBalance) * 100 : 0}%`,
               background: h.color,
             }}
           />
@@ -108,8 +123,8 @@ export function BalancesPanel({ data }: { data: WalletData }) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {data.holdings.map((h) => (
-            <TableRow key={h.symbol}>
+          {data.holdings.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE).map((h) => (
+            <TableRow key={h.tokenAddress}>
               <TableCell>
                 <div className="asset-name">
                   <span className="asset-mark" style={{ borderColor: h.color }}>
@@ -129,12 +144,13 @@ export function BalancesPanel({ data }: { data: WalletData }) {
                 <b>{usd(h.value)}</b>
               </TableCell>
               <TableCell>
-                {((h.value / data.totalBalance) * 100).toFixed(1)}%
+                {(data.totalBalance ? (h.value / data.totalBalance) * 100 : 0).toFixed(1)}%
               </TableCell>
             </TableRow>
           ))}
         </TableBody>
       </Table>
+      <Pager page={currentPage} total={data.holdings.length} onChange={setPage} />
     </section>
   );
 }
@@ -285,6 +301,12 @@ function TransactionRows({
             <div className="transaction-detail">
               <b>Transaction details</b>
               <code>{t.hash}</code>
+              {t.fromAddress && (
+                <div>
+                  <p><b>Initiated by</b> <code>{t.fromAddress}</code></p>
+                  <p><b>Receipt status</b> {t.successful ? 'Successful' : 'Failed'}</p>
+                </div>
+              )}
               {t.movements.map((m) => (
                 <div key={m.id}>
                   <span>
@@ -299,7 +321,7 @@ function TransactionRows({
                   </p>
                 </div>
               ))}
-              <small>Confirmed · {timestamp(t.timestamp)} UTC</small>
+              <small>{t.successful === undefined ? 'Receipt not verified' : t.successful ? 'Successful receipt' : 'Failed receipt'} · {timestamp(t.timestamp)} UTC</small>
             </div>
           </TableCell>
         </TableRow>
@@ -359,8 +381,8 @@ export function MovementPanel({
               }}
             >
               <option value="all">All assets</option>
-              {assets.map((a) => (
-                <option key={a.symbol}>{a.symbol}</option>
+              {[...new Set(movements.map((item) => item.token))].sort().map((symbol) => (
+                <option key={symbol}>{symbol}</option>
               ))}
             </select>
           </label>
@@ -505,7 +527,12 @@ export function FundFlows({ data }: { data: WalletData }) {
           <TableBody>
             {data.flows.map((f) => (
               <TableRow key={f.name}>
-                <TableCell><b>{f.name}</b></TableCell>
+                <TableCell>
+                  <div className="flow-counterparty">
+                    <b>{f.label || shortAddress(f.name)}</b>
+                    <small>{f.label ? shortAddress(f.name) : f.interactionCount ? `${f.interactionCount.toLocaleString()} interactions` : 'Wallet address'}</small>
+                  </div>
+                </TableCell>
                 <TableCell>
                   <button
                     className="flow-value-button"
@@ -547,6 +574,11 @@ export function FundFlows({ data }: { data: WalletData }) {
             ))}
           </TableBody>
         </Table>
+        <p className="flow-source">
+          {data.enrichmentCoverage.counterparties
+            ? 'Counterparty totals supplied by Nansen’s dedicated counterparty analysis.'
+            : 'Counterparty totals derived from the retrieved token movements.'}
+        </p>
       </section>
       {selected && (
         <div className="flow-selection">

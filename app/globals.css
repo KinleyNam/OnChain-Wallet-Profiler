@@ -741,7 +741,49 @@ h1 {
   overflow: hidden;
   border-radius: 3px;
   margin-bottom: 13px;
+  background: var(--surface-raised);
 }
+.protocol-empty {
+  padding: 22px;
+  border: 1px dashed var(--border);
+  border-radius: 9px;
+  background: var(--surface-raised);
+}
+.protocol-empty.compact { margin-top: 22px; }
+.protocol-empty b { color: var(--foreground); font-size: 13px; }
+.protocol-empty p {
+  margin-top: 5px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.protocol-context {
+  display: grid;
+  gap: 7px;
+  margin-top: 18px;
+  padding-top: 15px;
+  border-top: 1px solid var(--border);
+}
+.protocol-context > span {
+  color: var(--text-muted);
+  font-size: 10px;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.protocol-context button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 10px;
+  border-radius: 7px;
+  color: var(--foreground);
+  text-align: left;
+}
+.protocol-context button:hover { background: var(--surface-raised); }
+.protocol-context button span { display: grid; gap: 2px; }
+.protocol-context button b,
+.protocol-context button strong { font-size: 12px; font-weight: 500; }
+.protocol-context button small { color: var(--text-muted); font-size: 10px; }
 .protocol-row {
   display: flex;
   align-items: center;
@@ -922,6 +964,32 @@ h1 {
   gap: 20px;
   margin-top: 20px;
 }
+.trade-performance { margin-top: 20px; }
+.trade-performance dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+}
+.trade-performance dl > div { padding: 0 20px; border-left: 1px solid var(--border); }
+.trade-performance dl > div:first-child { padding-left: 0; border-left: 0; }
+.trade-performance dt { color: var(--text-muted); font-size: 11px; }
+.trade-performance dd { margin: 8px 0 0; color: var(--foreground); font-size: 22px; font-weight: 550; }
+.defi-positions { margin-top: 20px; }
+.defi-position-list { display: grid; gap: 0; }
+.defi-position-list > div {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto minmax(280px, 1fr);
+  align-items: center;
+  gap: 18px;
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+}
+.defi-position-list > div:first-child { border-top: 0; }
+.defi-position-list div > div { display: grid; gap: 4px; }
+.defi-position-list span,
+.defi-position-list small { color: var(--text-muted); font-size: 10px; }
+.defi-position-list strong { font-size: 15px; }
+.defi-position-list small { text-align: right; }
 .detail-copy,
 .methodology p {
   font-size: 15px;
@@ -1142,6 +1210,10 @@ h1 {
   .detail-grid {
     grid-template-columns: 1fr;
   }
+  .trade-performance dl { grid-template-columns: 1fr 1fr; gap: 20px 0; }
+  .trade-performance dl > div:nth-child(3) { padding-left: 0; border-left: 0; }
+  .defi-position-list > div { grid-template-columns: 1fr auto; }
+  .defi-position-list small { grid-column: 1 / -1; text-align: left; }
   .stats-grid {
     grid-template-columns: 1fr 1fr;
     gap: 20px 0;

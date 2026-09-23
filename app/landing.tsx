@@ -168,38 +168,38 @@ export default function Landing() {
               {
                 icon: Activity,
                 title: 'Active trader',
-                text: 'Frequent transactions and recurring activity across the analysis period.',
-                detail: 'Transaction frequency · Active days',
+                text: 'Verified DEX swaps across multiple days, with a meaningful share of outgoing transactions.',
+                detail: 'DEX swaps · Trading days',
               },
               {
                 icon: Layers,
                 title: 'DeFi participant',
-                text: 'Interactions across exchanges, lending platforms and staking protocols.',
-                detail: 'Protocol usage · Interaction patterns',
+                text: 'Repeated verified lending, borrowing or liquidity actions.',
+                detail: 'DeFi actions · Protocols used',
               },
               {
                 icon: Clock3,
                 title: 'Long-term holder',
-                text: 'A holding-oriented pattern, considered alongside transfer and protocol activity.',
-                detail: 'Holding behavior · Transfer activity',
+                text: 'A token retained through a verified 90-day balance and transfer history.',
+                detail: 'Retention · Recent outgoing activity',
               },
               {
                 icon: Images,
                 title: 'NFT trader',
-                text: 'Repeated marketplace activity across OpenSea, Blur or both.',
-                detail: 'Marketplace trades · Trading share',
+                text: 'Repeated verified NFT purchases or sales, rather than NFT transfers alone.',
+                detail: 'Verified trades · Collections',
               },
               {
                 icon: Coins,
                 title: 'Staking participant',
-                text: 'Recurring staking interactions and liquid-staking asset movements.',
-                detail: 'Staking activity · Protocol usage',
+                text: 'A verified active staking position backed by deposit history.',
+                detail: 'Active position · Deposit history',
               },
               {
                 icon: MoonStar,
                 title: 'Dormant or new wallet',
-                text: 'A recently created wallet or one with no meaningful recent activity.',
-                detail: 'Wallet age · Last activity',
+                text: 'A short wallet-initiated history or an older wallet without recent initiated transactions.',
+                detail: 'First activity · Lifetime history',
               },
             ].map(({ icon: Icon, title, text, detail }) => (
               <article key={title}>
@@ -230,15 +230,15 @@ export default function Landing() {
                 {[
                   [
                     'Observe wallet behavior',
-                    'Measure transaction frequency, active days, balances, token movements and recency.',
+                    'Retrieve Ethereum activity, balances and the records needed by each rule.',
                   ],
                   [
                     'Add protocol context',
-                    'Group interactions across trading, lending, staking and NFT marketplace protocols.',
+                    'Verify action types and wallet roles before counting protocol activity.',
                   ],
                   [
                     'Score each profile',
-                    'Assess six profiles independently, highlight the strongest match and show its evidence.',
+                    'Evaluate six profiles independently and show missing inputs when a result cannot be assessed.',
                   ],
                 ].map(([title, text], i) => (
                   <li key={title}>
