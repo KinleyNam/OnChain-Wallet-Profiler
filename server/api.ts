@@ -42,6 +42,7 @@ function summary(record: AnalysisRecord) {
     periodDays: record.periodDays,
     status: record.status,
     source: record.source,
+    sources: record.sources ?? [record.source],
     generatedAt: record.generatedAt,
     analysisCutoff: record.analysisCutoff,
     providerDataCutoff: record.providerDataCutoff,
@@ -50,6 +51,7 @@ function summary(record: AnalysisRecord) {
     mappingVersion: record.mappingVersion,
     primaryProfile: record.primaryProfile,
     transactionCount: record.data.transactions.length,
+    transactionCoverage: record.data.transactionCoverage,
     activeDays: record.data.daily.filter((day) => day > 0).length,
     totalBalanceUSD: record.data.totalBalance,
   };
@@ -84,6 +86,10 @@ export function createApi(store: AnalysisStore, allowedOrigin: string | undefine
     }
     console.error('API error:', error instanceof Error ? error.message : 'unknown error');
     const message = error instanceof Error ? error.message : '';
+    if (message.startsWith('Nansen credits are exhausted for all configured API keys.')) {
+      reply.code(503).send({ error: message });
+      return;
+    }
     const nansenStatus = /^Nansen (transactions|current-balance) request failed \((\d{3})\)\.$/.exec(message);
     if (nansenStatus) {
       const [, endpoint, status] = nansenStatus;
@@ -221,7 +227,7 @@ export function createApi(store: AnalysisStore, allowedOrigin: string | undefine
   });
   app.get<{ Params: IdParams }>('/api/v1/analyses/:analysisId/retrieval-status', async (request, reply) => {
     const record = await getRecord(request.params.analysisId, reply);
-    if (record) return { source: record.source, status: 'retrieved-pages', recordCount: record.data.transactions.length, periodDays: record.periodDays, asOf: record.data.asOf, providerDataCutoff: record.providerDataCutoff };
+    if (record) return { source: record.source, status: record.data.transactionCoverage?.complete === false ? 'transaction-limit-reached' : 'retrieved-pages', transactionCoverage: record.data.transactionCoverage, recordCount: record.data.transactions.length, periodDays: record.periodDays, asOf: record.data.asOf, providerDataCutoff: record.providerDataCutoff };
   });
   app.get<{ Params: IdParams }>('/api/v1/analyses/:analysisId/export', async (request, reply) => {
     const record = await getRecord(request.params.analysisId, reply);

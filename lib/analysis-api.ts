@@ -20,7 +20,7 @@ export async function loadWalletAnalysis(address: string, periodDays: number, si
     signal,
   });
   const [result, profiles, indicators] = await Promise.all([
-    json<{ wallet: WalletData; analysis: { source: string; ruleVersion: string; mappingVersion: string; providerDataCutoff: string | null } }>(`/api/v1/analyses/${created.analysisId}/data`, { signal }),
+    json<{ wallet: WalletData; analysis: { source: string; sources?: string[]; ruleVersion: string; mappingVersion: string; providerDataCutoff: string | null } }>(`/api/v1/analyses/${created.analysisId}/data`, { signal }),
     json<{ primaryProfile: string; items: ProfileResult[] }>(`/api/v1/analyses/${created.analysisId}/profiles`, { signal }),
     json<{ score: number; band: string; signals: Array<{ name: string; detected: boolean; value: string }> }>(`/api/v1/analyses/${created.analysisId}/risk-indicators`, { signal }),
   ]);

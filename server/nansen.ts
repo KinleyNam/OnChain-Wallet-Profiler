@@ -1,3 +1,4 @@
+import { NansenClient, type NansenCredentials } from './nansen-client';
 import {
   analysisIdFor,
   ANALYSIS_TTL_SECONDS,
@@ -108,19 +109,11 @@ function number(value: unknown) {
 }
 
 async function request<T>(
-  key: string,
+  key: NansenClient,
   endpoint: string,
   payload: Record<string, unknown>,
 ): Promise<Page<T>> {
-  const response = await fetch(`${API}/${endpoint}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', apikey: key },
-    body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!response.ok) {
-    throw new Error(`Nansen ${endpoint} request failed (${response.status}).`);
-  }
+  const response = await key.request(`${API}/${endpoint}`, payload, endpoint);
   const result: unknown = await response.json();
   if (
     !result ||
@@ -134,24 +127,19 @@ async function request<T>(
 }
 
 async function requestJson<T>(
-  key: string,
+  key: NansenClient,
   url: string,
   payload: Record<string, unknown>,
 ): Promise<T> {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', apikey: key },
-    body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!response.ok) throw new Error(`Nansen enrichment request failed (${response.status}).`);
+  const response = await key.request(url, payload, 'enrichment');
   return (await response.json()) as T;
 }
 
 async function allPages<T>(
-  key: string,
+  key: NansenClient,
   endpoint: keyof typeof PAGINATION,
   body: Record<string, unknown>,
+  onLimit?: () => void,
 ) {
   const { perPage, maxPages } = PAGINATION[endpoint];
   const rows: T[] = [];
@@ -167,14 +155,19 @@ async function allPages<T>(
     )
       return rows;
   }
+  if (onLimit) {
+    onLimit();
+    return rows;
+  }
   throw new Error(
     `Nansen ${endpoint} exceeded the ${maxPages * perPage}-record retrieval limit; analysis was not saved.`,
   );
 }
 
 async function allDexPages(
-  key: string,
+  key: NansenClient,
   body: Record<string, unknown>,
+  onLimit: () => void,
 ): Promise<NansenDexTrade[]> {
   const rows: NansenDexTrade[] = [];
   const perPage = 1000;
@@ -192,9 +185,8 @@ async function allDexPages(
     )
       return rows;
   }
-  throw new Error(
-    `Nansen dex-trades exceeded the ${maxPages * perPage}-record retrieval limit; DEX evidence was withheld.`,
-  );
+  onLimit();
+  return rows;
 }
 
 async function optional<T>(name: string, task: Promise<T>): Promise<T | undefined> {
@@ -469,9 +461,10 @@ export function normalizeNansen(
 export async function createNansenAnalysis(
   address: string,
   periodDays: number,
-  key: string,
+  credentials: NansenCredentials,
   ethereumRpcUrl?: string,
 ): Promise<AnalysisRecord> {
+  const key = credentials instanceof NansenClient ? credentials : new NansenClient(credentials);
   const normalized = address.toLowerCase();
   const asOf = new Date().toISOString();
   const from = new Date(
@@ -485,6 +478,8 @@ export async function createNansenAnalysis(
   )
     .toISOString()
     .slice(0, 10);
+  let transactionsComplete = true;
+  let dexComplete = true;
   const [balances, transactions] = await Promise.all([
     allPages<Balance>(key, 'current-balance', {
       address: normalized,
@@ -496,7 +491,7 @@ export async function createNansenAnalysis(
       chain: 'ethereum',
       date: { from, to },
       hide_spam_token: true,
-    }),
+    }, () => { transactionsComplete = false; }),
   ]);
   const [historicalBalances, counterparties, pnlSummary, defiHoldings, dexTrades, receipts] =
     await Promise.all([
@@ -541,7 +536,7 @@ export async function createNansenAnalysis(
           chain: 'ethereum',
           date: { from: dexFrom, to },
           order_by: [{ field: 'block_timestamp', direction: 'DESC' }],
-        }),
+        }, () => { dexComplete = false; }),
       ),
       ethereumRpcUrl
         ? optional(
@@ -561,6 +556,11 @@ export async function createNansenAnalysis(
     transactions,
     { historicalBalances, counterparties, pnlSummary, defiHoldings, receipts },
   );
+  data.transactionCoverage = {
+    complete: transactionsComplete,
+    limit: PAGINATION.transactions.perPage * PAGINATION.transactions.maxPages,
+    fetched: transactions.length,
+  };
   // These endpoints do not verify transaction initiator/status, NFT trade
   // roles, continuous balances, staking deposit history, or lifetime history.
   // Keep classifier inputs unknown until a verified source supplies them.
@@ -600,9 +600,8 @@ export async function createNansenAnalysis(
     successful: receiptByHash.get(trade.hash)?.successful ?? false,
     tokenIds: [...trade.tokenIds],
   }));
-  const dexReceiptCoverage =
-    dexTrades !== undefined &&
-    [...dexByHash.keys()].every((hash) => receiptByHash.has(hash));
+  const partialActivity = !transactionsComplete || !dexComplete ||
+    [...dexByHash.keys()].some((hash) => !receiptByHash.has(hash));
   const profiles = classify(
     buildClassificationEvidence({
       address: normalized,
@@ -612,7 +611,7 @@ export async function createNansenAnalysis(
         transactions90d: receiptCoverage && periodDays >= 90,
         lifetimeTransactions: false,
         dexTrades30d:
-          periodDays >= 30 && receiptCoverage && dexReceiptCoverage,
+          periodDays >= 30 && receiptCoverage && dexTrades !== undefined,
         defiActions30d: false,
         nftTrades30d: false,
         holdingHistory90d: false,
@@ -624,13 +623,20 @@ export async function createNansenAnalysis(
         fromAddress: receipt.fromAddress,
         successful: receipt.successful,
       })),
-      dexTrades: verifiedDexTrades,
+      dexTrades: verifiedDexTrades.filter((trade) => receiptByHash.has(trade.hash)),
       defiActions: [],
       nftTrades: [],
       holdings: [],
       stakingPositions: [],
     }),
   );
+  if (partialActivity) {
+    for (const profile of profiles) {
+      if (profile.status === 'NOT_ASSESSED') continue;
+      profile.dataCoverage = 'incomplete';
+      profile.evidence += ' Existing scoring rules applied to fetched, verified activity only; history and ratios may be partial.';
+    }
+  }
   return {
     analysisId: analysisIdFor(normalized, periodDays),
     address: normalized,
@@ -638,6 +644,7 @@ export async function createNansenAnalysis(
     periodDays,
     status: 'complete',
     source: 'nansen',
+    sources: receipts?.length ? ['nansen', 'alchemy'] : ['nansen'],
     generatedAt: new Date().toISOString(),
     analysisCutoff: asOf,
     providerDataCutoff: null,

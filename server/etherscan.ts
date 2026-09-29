@@ -323,6 +323,7 @@ export async function createEtherscanAnalysis(
     periodDays,
     status: 'complete',
     source: 'etherscan',
+    sources: ['etherscan'],
     generatedAt: new Date().toISOString(),
     analysisCutoff: asOf,
     providerDataCutoff: null,

@@ -73,6 +73,7 @@ export type DefiPosition = {
 };
 
 export type WalletData = {
+  transactionCoverage?: { complete: boolean; limit: number; fetched: number };
   transactions: Transaction[];
   movements: Movement[];
   daily: number[];

@@ -1,5 +1,5 @@
 const RECEIPT_BATCH_SIZE = 100;
-export const MAX_RECEIPTS_PER_ANALYSIS = 1_000;
+export const MAX_RECEIPTS_PER_ANALYSIS = 5_000;
 
 export type VerifiedReceipt = {
   hash: string;

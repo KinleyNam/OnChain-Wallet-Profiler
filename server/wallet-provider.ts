@@ -1,9 +1,10 @@
+import type { NansenCredentials } from './nansen-client';
 import type { AnalysisRecord } from './analysis';
 import { createEtherscanAnalysis } from './etherscan';
 import { createNansenAnalysis } from './nansen';
 
 export type ProviderSettings = {
-  nansenKey?: string;
+  nansenKey?: NansenCredentials;
   etherscanKey?: string;
   ethereumRpcUrl?: string;
 };

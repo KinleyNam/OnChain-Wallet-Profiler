@@ -35,6 +35,6 @@ void test('rejects receipt sets above the per-analysis verification limit', asyn
       'https://example.invalid',
       Array.from({ length: MAX_RECEIPTS_PER_ANALYSIS + 1 }, (_, index) => `0x${index}`),
     ),
-    /limited to 1,000/,
+    /limited to 5,000/,
   );
 });

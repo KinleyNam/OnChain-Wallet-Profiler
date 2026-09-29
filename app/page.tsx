@@ -146,7 +146,10 @@ export default function Home() {
         setAnalysisId(result.analysisId);
         setServerProfiles(result.profiles.items);
         setServerPrimary(result.profiles.primaryProfile);
-        setDataSource(result.analysis.source);
+        setDataSource((result.analysis.sources ?? [result.analysis.source]).map((source) =>
+          source === 'nansen' ? 'Nansen API' : source === 'etherscan' ? 'Etherscan API' :
+            source === 'alchemy' ? 'Alchemy (receipt verification)' : 'Analysis service',
+        ).join(' + '));
         setRuleVersion(result.analysis.ruleVersion);
         setMappingVersion(result.analysis.mappingVersion);
         setProviderCutoff(result.analysis.providerDataCutoff);
@@ -629,6 +632,13 @@ export default function Home() {
               {error}
             </p>
           )}
+          {walletData.transactionCoverage?.complete === false && (
+            <p className="provenance">
+              Transaction limit reached. This analysis uses {walletData.transactionCoverage.fetched.toLocaleString()} fetched transactions
+              and other available wallet data. Transaction totals and activity charts are partial;
+              profile scores use the available verified activity and existing scoring rules.
+            </p>
+          )}
           <div className="wallet-heading">
             <div>
               <div className="wallet-title">
@@ -660,7 +670,7 @@ export default function Home() {
           <section className="analysis-status" aria-label="Analysis provenance">
             <div>
               <span>Data source</span>
-              <strong>{dataSource === 'nansen' ? 'Nansen API' : dataSource === 'etherscan' ? 'Etherscan API' : 'Analysis service'}</strong>
+              <strong>{dataSource}</strong>
             </div>
             <div>
               <span>Profiles assessed</span>
@@ -994,7 +1004,7 @@ export default function Home() {
                   </div>
                 </div>
                 <dl>
-                  <div><dt>Source</dt><dd>{dataSource === 'nansen' ? 'Nansen API' : dataSource === 'etherscan' ? 'Etherscan API' : 'Analysis service'}</dd></div>
+                  <div><dt>Sources</dt><dd>{dataSource}</dd></div>
                   <div><dt>Mapping version</dt><dd>{mappingVersion}</dd></div>
                   <div><dt>Requested period</dt><dd>{date(11 - days)} – {endDate}</dd></div>
                   <div><dt>Profile assessability</dt><dd>{profileResults.filter((profile) => profile.status !== 'NOT_ASSESSED').length} of {profileResults.length} assessed</dd></div>

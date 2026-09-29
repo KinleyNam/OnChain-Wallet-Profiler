@@ -1,3 +1,4 @@
+import { NansenClient, nansenKeysFromEnv } from './nansen-client';
 import { config } from 'dotenv';
 import { createApi } from './api';
 import { connectRedis, type AnalysisStore } from './store';
@@ -24,7 +25,8 @@ try {
   console.error('Could not connect to Redis. Check the server environment settings.');
   process.exit(1);
 }
-const nansenKey = process.env.NANSEN_API_KEY;
+const nansenKeys = nansenKeysFromEnv(process.env);
+const nansenKey = nansenKeys.length ? new NansenClient(nansenKeys) : undefined;
 const etherscanKey = process.env.ETHERSCAN_API_KEY;
 if (!nansenKey && !etherscanKey) {
   console.error('NANSEN_API_KEY or ETHERSCAN_API_KEY is required. See server/README.md.');

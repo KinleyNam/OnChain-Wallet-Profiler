@@ -49,6 +49,7 @@ void test('falls back to Etherscan when Nansen credits are unavailable', async (
       etherscanKey: 'etherscan-key',
     });
     assert.equal(record.source, 'etherscan');
+    assert.deepEqual(record.sources, ['etherscan']);
     assert.equal(record.data.transactions.length, 1);
     assert.equal(record.data.transactions[0].successful, true);
     assert.equal(record.data.movements[0].token, 'ETH');

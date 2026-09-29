@@ -2,6 +2,62 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createNansenAnalysis, normalizeNansen } from './nansen';
 
+for (const lastPageComplete of [false, true]) {
+  void test(`retains 5,000 transactions with complete=${lastPageComplete} at the page limit`, async (t) => {
+    let pages = 0;
+    const timestamp = new Date(Date.now() - 86_400_000).toISOString();
+    const tradeTime = (i: number) => new Date(Date.parse(timestamp) - (i % 5) * 86_400_000).toISOString();
+    t.mock.method(globalThis, 'fetch', async (input: string, init: RequestInit) => {
+      if (input === 'https://rpc.example') {
+        if (typeof init.body !== 'string') throw new Error('Expected JSON request body.');
+        const requests = JSON.parse(init.body) as Array<{ id: number; params: string[] }>;
+        return Response.json(requests.map((request) => ({ id: request.id, result: {
+          transactionHash: request.params[0], from: '0x1111111111111111111111111111111111111111',
+          to: '0x2222222222222222222222222222222222222222', status: '0x1',
+        } })));
+      }
+      if (input.endsWith('/dex-trades')) return Response.json({
+        data: Array.from({ length: 10 }, (_, i) => ({
+          transaction_hash: `0x1-${i}`, block_timestamp: tradeTime(i),
+          trader_address: '0x1111111111111111111111111111111111111111',
+          token_bought_address: `0xtoken${i}`, token_sold_address: '0xeth',
+        })), pagination: { is_last_page: true },
+      });
+      if (input.endsWith('/transactions')) {
+        if (typeof init.body !== 'string') throw new Error('Expected JSON request body.');
+        const body = JSON.parse(init.body) as { pagination: { page: number } };
+        pages++;
+        const page = body.pagination.page;
+        assert.ok(page <= 50);
+        return Response.json({
+          data: Array.from({ length: 100 }, (_, i) => ({
+            transaction_hash: `0x${page}-${i}`, block_timestamp: tradeTime(i),
+            method: 'transfer', source_type: 'transfer', volume_usd: 1,
+            tokens_sent: [], tokens_received: [],
+          })),
+          pagination: { is_last_page: lastPageComplete && page === 50 },
+        });
+      }
+      if (input.endsWith('/pnl-summary')) return Response.json({ traded_times: 7 });
+      if (input.endsWith('/defi-holdings')) return Response.json({ protocols: [] });
+      return Response.json({ data: [], pagination: { is_last_page: true } });
+    });
+    const record = await createNansenAnalysis('0x1111111111111111111111111111111111111111', 30, 'test-key', 'https://rpc.example');
+    assert.equal(pages, 50);
+    assert.equal(record.status, 'complete');
+    assert.equal(record.source, 'nansen');
+    assert.equal(record.data.transactions.length, 5000);
+    assert.deepEqual(record.data.transactionCoverage, { complete: lastPageComplete, limit: 5000, fetched: 5000 });
+    assert.equal(record.data.tradePerformance?.tradedTimes, 7);
+    assert.equal(record.data.enrichmentCoverage.defiPositions, true);
+    const trader = record.profiles.find((profile) => profile.name === 'Active trader')!;
+    assert.equal(trader.status, 'ASSIGNED');
+    assert.equal(trader.score, 70);
+    assert.equal(trader.dataCoverage, lastPageComplete ? 'complete' : 'incomplete');
+    assert.equal(record.primaryProfile, 'Active trader');
+  });
+}
+
 void test('normalizes live balance and transfer fields without creating protocol activity', () => {
   const address = '0x1111111111111111111111111111111111111111';
   const other = '0x2222222222222222222222222222222222222222';
@@ -191,6 +247,7 @@ void test('live provider does not turn unverified Nansen activity into a profile
   try {
     const record = await createNansenAnalysis(address, 30, 'test-key', 'https://rpc.example');
     assert.equal(calls.length, 8);
+    assert.deepEqual(record.sources, ['nansen', 'alchemy']);
     assert.equal(record.data.transactions.length, 1);
     assert.equal(record.data.transactions[0].successful, true);
     assert.equal(record.data.transactions[0].fromAddress, address);
@@ -205,7 +262,7 @@ void test('live provider does not turn unverified Nansen activity into a profile
     assert.ok(record.profiles.filter((item) => item.name !== 'Active trader').every(
       (item) => item.status === 'NOT_ASSESSED' && item.score === null,
     ));
-    assert.equal(record.mappingVersion, 'mappings-v6');
+    assert.equal(record.mappingVersion, 'mappings-v7');
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -255,6 +312,7 @@ void test('retrieves transactions beyond the former 1,000-record limit', async (
   try {
     const record = await createNansenAnalysis(address, 30, 'test-key');
     assert.equal(transactionPages, 11);
+    assert.deepEqual(record.sources, ['nansen']);
     assert.equal(record.data.transactions.length, 1001);
   } finally {
     globalThis.fetch = originalFetch;

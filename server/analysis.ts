@@ -18,6 +18,7 @@ export type AnalysisRecord = {
   periodDays: number;
   status: 'complete';
   source: 'nansen' | 'etherscan';
+  sources?: Array<'nansen' | 'etherscan' | 'alchemy'>;
   generatedAt: string;
   analysisCutoff: string;
   providerDataCutoff: string | null;
