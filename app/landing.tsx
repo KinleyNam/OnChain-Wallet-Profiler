@@ -273,7 +273,7 @@ export default function Landing() {
           <Blocks size={20} />
           <span>OnChain</span>
         </a>
-        <p>Ethereum wallet analytics</p>
+        <p>© {new Date().getFullYear()} Onchain Wallet Profiler. All rights reserved.</p>
         <a href="/profiler">
           Open profiler <ArrowUpRight size={14} />
         </a>

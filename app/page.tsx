@@ -1050,7 +1050,7 @@ export default function Home() {
             <span>
               <Blocks size={14} /> OnChain Wallet Profiler
             </span>
-            <span>Ethereum wallet analytics</span>
+            <span>© {new Date().getFullYear()} Onchain Wallet Profiler. All rights reserved.</span>
           </footer>
         </div>
       </main>
