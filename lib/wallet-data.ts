@@ -6,8 +6,6 @@ export const protocolDefinitions = [
   { name: 'Lido', letter: 'L', type: 'Liquid staking', color: '#b6a3e6' },
   { name: 'OpenSea', letter: 'O', type: 'Marketplace protocol', color: '#a78cde' },
   { name: 'Blur', letter: 'B', type: 'Marketplace protocol', color: '#bcaddb' },
-  { name: 'CurveFinance', letter: 'CuF', type: 'Automated market maker', color: '#bcaddb' },
-  { name: 'ENS', letter: 'ENS', type: 'Domain name service', color: '#bcaddb' },
   { name: 'No protocol', letter: '—', type: 'Direct wallet transfers', color: '#ada5bc' },
   { name: 'Unknown', letter: '?', type: 'Unattributed transfers', color: '#ada5bc' },
 ] as const;
