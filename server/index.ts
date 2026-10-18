@@ -28,8 +28,9 @@ try {
 const nansenKeys = nansenKeysFromEnv(process.env);
 const nansenKey = nansenKeys.length ? new NansenClient(nansenKeys) : undefined;
 const etherscanKey = process.env.ETHERSCAN_API_KEY;
-if (!nansenKey && !etherscanKey) {
-  console.error('NANSEN_API_KEY or ETHERSCAN_API_KEY is required. See server/README.md.');
+const arkhamKey = process.env.ARKHAM_API_KEY;
+if (!nansenKey && !etherscanKey && !arkhamKey) {
+  console.error('NANSEN_API_KEY, ETHERSCAN_API_KEY, or ARKHAM_API_KEY is required. See server/README.md.');
   await store.close();
   process.exit(1);
 }
@@ -44,6 +45,8 @@ const app = createApi(store, process.env.FRONTEND_ORIGIN, {
       nansenKey,
       etherscanKey,
       ethereumRpcUrl,
+      arkhamKey,
+      arkhamBaseUrl: process.env.ARKHAM_API_BASE_URL,
     }),
 });
 try {

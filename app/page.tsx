@@ -148,7 +148,8 @@ export default function Home() {
         setServerPrimary(result.profiles.primaryProfile);
         setDataSource((result.analysis.sources ?? [result.analysis.source]).map((source) =>
           source === 'nansen' ? 'Nansen API' : source === 'etherscan' ? 'Etherscan API' :
-            source === 'alchemy' ? 'Alchemy (receipt verification)' : 'Analysis service',
+            source === 'alchemy' ? 'Alchemy (receipt verification)' :
+              source === 'arkham' ? 'Arkham Intelligence' : 'Analysis service',
         ).join(' + '));
         setRuleVersion(result.analysis.ruleVersion);
         setMappingVersion(result.analysis.mappingVersion);

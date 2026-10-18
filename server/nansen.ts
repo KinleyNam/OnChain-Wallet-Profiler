@@ -17,13 +17,20 @@ import {
   type WalletData,
 } from '../lib/wallet-data';
 import { fetchVerifiedReceipts, type VerifiedReceipt } from './alchemy';
+import {
+  extractDefiActions,
+  extractStakingPositions,
+  reconstructRetainedHoldings,
+  type PipelineTransaction,
+} from './profile-pipelines';
 
 const API = 'https://api.nansen.ai/api/v1/profiler/address';
 const DEFI_API = 'https://api.nansen.ai/api/v1/portfolio/defi-holdings';
 const DEX_API = 'https://api.nansen.ai/api/v1/profiler/dex-trades';
 const DAY = 86_400_000;
+export const MAX_NANSEN_TRANSACTIONS = 100_000;
 const PAGINATION = {
-  transactions: { perPage: 100, maxPages: 50 },
+  transactions: { perPage: 100, maxPages: MAX_NANSEN_TRANSACTIONS / 100 },
   'current-balance': { perPage: 1000, maxPages: 10 },
   'historical-balances': { perPage: 1000, maxPages: 10 },
   counterparties: { perPage: 1000, maxPages: 10 },
@@ -38,6 +45,7 @@ type Balance = {
   value_usd: number | string;
 };
 type TokenInfo = {
+  token_address?: string;
   token_symbol: string;
   token_amount: number | string;
   value_usd: number | string;
@@ -214,6 +222,7 @@ const PROTOCOL_CONTRACTS = new Map<string, string>([
   ['0x00000000000000adc04c56bf30ac9d3c0aaf14dc', 'OpenSea'],
   ['0x0000000000000068f116a894984e2db1123eb395', 'OpenSea'],
   ['0x000000000000ad05ccc4f10045630fb830b95127', 'Blur'],
+  ['0xb2ecfe4e4d61f8790bbb9de2d1259b9e2410cea5', 'Blur'],
 ]);
 
 function labels(value: string | string[] | undefined) {
@@ -569,12 +578,34 @@ export async function createNansenAnalysis(
   ).size;
   const receiptCoverage =
     receipts !== undefined && receipts.length === uniqueTransactionCount;
+  data.verifiedTransactionCoverage = receiptCoverage;
   const timestampByHash = new Map(
     transactions.map((row) => [row.transaction_hash.toLowerCase(), row.block_timestamp]),
   );
   const receiptByHash = new Map(
     (receipts ?? []).map((receipt) => [receipt.hash.toLowerCase(), receipt]),
   );
+  const pipelineTransactions: PipelineTransaction[] = transactions.map((row) => {
+    const receipt = receiptByHash.get(row.transaction_hash.toLowerCase());
+    const token = (item: TokenInfo) => ({
+      tokenAddress: item.token_address,
+      symbol: item.token_symbol,
+      amount: number(item.token_amount),
+      valueUsd: number(item.value_usd),
+      fromAddress: item.from_address,
+      toAddress: item.to_address,
+    });
+    return {
+      hash: row.transaction_hash.toLowerCase(),
+      timestamp: row.block_timestamp,
+      method: row.method || row.source_type || '',
+      protocol: protocolFor(row, receipt),
+      fromAddress: receipt?.fromAddress,
+      successful: receipt?.successful,
+      tokensSent: (row.tokens_sent ?? []).map(token),
+      tokensReceived: (row.tokens_received ?? []).map(token),
+    };
+  });
   const dexByHash = new Map<
     string,
     { hash: string; timestamp: string; traderAddress: string; tokenIds: Set<string> }
@@ -602,6 +633,60 @@ export async function createNansenAnalysis(
   }));
   const partialActivity = !transactionsComplete || !dexComplete ||
     [...dexByHash.keys()].some((hash) => !receiptByHash.has(hash));
+  const verifiedDefiActions = extractDefiActions(normalized, pipelineTransactions);
+  const retainedHoldings = reconstructRetainedHoldings({
+    cutoff: asOf,
+    balances: balances.map((balance) => ({
+      tokenAddress: balance.token_address,
+      symbol: balance.token_symbol,
+      amount: number(balance.token_amount),
+      priceUsd: number(balance.price_usd),
+      valueUsd: number(balance.value_usd),
+    })),
+    historical: (historicalBalances ?? []).map((balance) => ({
+      timestamp: balance.block_timestamp,
+      tokenAddress: balance.token_address,
+      symbol: balance.token_symbol,
+      amount: number(balance.token_amount),
+      valueUsd: number(balance.value_usd),
+    })),
+    transactions: pipelineTransactions,
+  });
+  const verifiedStakingPositions = extractStakingPositions({
+    wallet: normalized,
+    cutoff: asOf,
+    balances: balances.map((balance) => ({
+      tokenAddress: balance.token_address,
+      symbol: balance.token_symbol,
+      amount: number(balance.token_amount),
+      priceUsd: number(balance.price_usd),
+      valueUsd: number(balance.value_usd),
+    })),
+    historical: (historicalBalances ?? []).map((balance) => ({
+      timestamp: balance.block_timestamp,
+      tokenAddress: balance.token_address,
+      symbol: balance.token_symbol,
+      amount: number(balance.token_amount),
+      valueUsd: number(balance.value_usd),
+    })),
+    transactions: pipelineTransactions,
+    positions: (defiHoldings?.protocols ?? [])
+      .filter((position) => position.chain.toLowerCase() === 'ethereum')
+      .map((position) => ({
+        protocolId: position.protocol_name,
+        totalValueUsd: number(position.total_value_usd),
+        positionTypes: (position.tokens ?? [])
+          .map((token) => token.position_type)
+          .filter((value): value is string => Boolean(value)),
+      })),
+  });
+  const verifiedThirtyDayTransactions =
+    periodDays >= 30 && transactionsComplete && receiptCoverage;
+  const verifiedNinetyDayHistory =
+    periodDays >= 90 && transactionsComplete && receiptCoverage &&
+    historicalBalances !== undefined;
+  const verifiedStakingHistory =
+    verifiedNinetyDayHistory && defiHoldings !== undefined;
   const profiles = classify(
     buildClassificationEvidence({
       address: normalized,
@@ -612,10 +697,10 @@ export async function createNansenAnalysis(
         lifetimeTransactions: false,
         dexTrades30d:
           periodDays >= 30 && receiptCoverage && dexTrades !== undefined,
-        defiActions30d: false,
+        defiActions30d: verifiedThirtyDayTransactions,
         nftTrades30d: false,
-        holdingHistory90d: false,
-        stakingPositionsAndDeposits: false,
+        holdingHistory90d: verifiedNinetyDayHistory,
+        stakingPositionsAndDeposits: verifiedStakingHistory,
       },
       transactions: (receipts ?? []).map((receipt) => ({
         hash: receipt.hash,
@@ -624,10 +709,10 @@ export async function createNansenAnalysis(
         successful: receipt.successful,
       })),
       dexTrades: verifiedDexTrades.filter((trade) => receiptByHash.has(trade.hash)),
-      defiActions: [],
+      defiActions: verifiedDefiActions,
       nftTrades: [],
-      holdings: [],
-      stakingPositions: [],
+      holdings: retainedHoldings,
+      stakingPositions: verifiedStakingPositions,
     }),
   );
   if (partialActivity) {

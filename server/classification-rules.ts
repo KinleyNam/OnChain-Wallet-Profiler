@@ -1,5 +1,5 @@
 export const CLASSIFICATION_RULE_VERSION = 'classification-v1.0';
-export const MAPPING_VERSION = 'mappings-v7';
+export const MAPPING_VERSION = 'mappings-v10';
 
 export const PROFILE_RULES = {
   activeTrader: {

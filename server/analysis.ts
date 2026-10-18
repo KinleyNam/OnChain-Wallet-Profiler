@@ -17,8 +17,8 @@ export type AnalysisRecord = {
   network: 'ethereum-mainnet';
   periodDays: number;
   status: 'complete';
-  source: 'nansen' | 'etherscan';
-  sources?: Array<'nansen' | 'etherscan' | 'alchemy'>;
+  source: 'nansen' | 'etherscan' | 'arkham';
+  sources?: Array<'nansen' | 'etherscan' | 'alchemy' | 'arkham'>;
   generatedAt: string;
   analysisCutoff: string;
   providerDataCutoff: string | null;
