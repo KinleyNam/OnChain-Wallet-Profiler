@@ -1,6 +1,40 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { fetchVerifiedReceipts, MAX_RECEIPTS_PER_ANALYSIS } from './alchemy';
+import {
+  fetchEthereumAddressType,
+  fetchVerifiedReceipts,
+  MAX_RECEIPTS_PER_ANALYSIS,
+} from './alchemy';
+
+void test('identifies externally owned accounts and smart contracts from bytecode', async () => {
+  const originalFetch = globalThis.fetch;
+  const results = ['0x', '0x6080604052'];
+  globalThis.fetch = async (_input, init) => {
+    const requestBody = init?.body;
+    if (typeof requestBody !== 'string') throw new Error('Expected a JSON request body.');
+    const request = JSON.parse(requestBody) as { method: string };
+    assert.equal(request.method, 'eth_getCode');
+    return Response.json({ jsonrpc: '2.0', id: 1, result: results.shift() });
+  };
+  try {
+    assert.equal(
+      await fetchEthereumAddressType(
+        'https://example.invalid',
+        '0x1111111111111111111111111111111111111111',
+      ),
+      'externally-owned-account',
+    );
+    assert.equal(
+      await fetchEthereumAddressType(
+        'https://example.invalid',
+        '0x2222222222222222222222222222222222222222',
+      ),
+      'smart-contract',
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 void test('normalizes batched Ethereum transaction receipts', async () => {
   const originalFetch = globalThis.fetch;
@@ -44,7 +78,9 @@ void test('retries only receipts rejected by provider capacity limits', async ()
   let calls = 0;
   globalThis.fetch = async (_input, init) => {
     calls++;
-    const requests = JSON.parse(String(init?.body)) as Array<{
+    const requestBody = init?.body;
+    if (typeof requestBody !== 'string') throw new Error('Expected a JSON request body.');
+    const requests = JSON.parse(requestBody) as Array<{
       id: number;
       params: string[];
     }>;

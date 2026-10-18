@@ -2,6 +2,8 @@
 
 Ethereum wallet profiler with a React frontend, a Nansen-backed analysis API, and Redis snapshot caching. Enter an Ethereum address to view current and historical balances, recent transactions, token movements, dedicated counterparty flows, trade performance, DeFi positions, protocol attribution, profile evidence, and behavioral indicators when those Nansen datasets are available.
 
+For a complete folder-by-folder explanation, startup trace, and the exact internal and external requests triggered by **Analyze wallet**, see [docs/PROJECT_CODE_GUIDE.md](docs/PROJECT_CODE_GUIDE.md).
+
 ## Run locally
 
 ```powershell

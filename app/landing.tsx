@@ -17,7 +17,7 @@ import {
 export default function Landing() {
   const [address, setAddress] = useState('');
   const [error, setError] = useState('');
-  function openProfile(event: React.FormEvent<HTMLFormElement>) {
+  function openProfile(event: React.SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     const value = address.trim();
     if (!/^0x[a-fA-F0-9]{40}$/.test(value)) {

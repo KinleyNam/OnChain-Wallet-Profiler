@@ -2,6 +2,35 @@
 .loading-error { margin-top: 28px; }
 .loading-error h2 { font-size: 18px; }
 .loading-error p { margin: 8px 0 16px; color: var(--text-secondary); }
+.profiler-empty {
+  display: grid;
+  justify-items: center;
+  margin-top: 28px;
+  padding: 76px 24px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  text-align: center;
+}
+.profiler-empty-icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 18px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  color: var(--accent-text);
+  background: var(--surface-raised);
+}
+.profiler-empty h2 { font-size: 18px; font-weight: 600; }
+.profiler-empty p {
+  max-width: 520px;
+  margin-top: 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
 .wallet-loading .loading-value {
   display: inline-flex;
   align-items: center;

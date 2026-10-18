@@ -4,6 +4,7 @@ import { createApi } from './api';
 import { connectRedis, type AnalysisStore } from './store';
 import { analysisIdFor } from './analysis';
 import { createWalletAnalysis } from './wallet-provider';
+import { fetchEthereumAddressType } from './alchemy';
 
 config({ path: 'server/.env.local', quiet: true });
 const redisUrl = process.env.REDIS_URL;
@@ -40,6 +41,9 @@ if (!ethereumRpcUrl) {
 }
 const app = createApi(store, process.env.FRONTEND_ORIGIN, {
   idFor: analysisIdFor,
+  getAccountType: ethereumRpcUrl
+    ? (address) => fetchEthereumAddressType(ethereumRpcUrl, address)
+    : undefined,
   create: (address, periodDays) =>
     createWalletAnalysis(address, periodDays, {
       nansenKey,

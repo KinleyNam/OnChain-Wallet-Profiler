@@ -3,6 +3,8 @@ const RECEIPT_RETRY_ATTEMPTS = 6;
 const RECEIPT_RETRY_DELAY_MS = 1_000;
 export const MAX_RECEIPTS_PER_ANALYSIS = 100_000;
 
+export type EthereumAddressType = 'externally-owned-account' | 'smart-contract';
+
 export type VerifiedReceipt = {
   hash: string;
   fromAddress: string;
@@ -25,6 +27,39 @@ type RpcResponse = {
 
 const wait = (milliseconds: number) =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+export async function fetchEthereumAddressType(
+  rpcUrl: string,
+  address: string,
+): Promise<EthereumAddressType> {
+  const response = await fetch(rpcUrl, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'eth_getCode',
+      params: [address, 'latest'],
+    }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok)
+    throw new Error(`Ethereum account-type request failed (${response.status}).`);
+  const body = (await response.json()) as {
+    result?: unknown;
+    error?: { message?: string };
+  };
+  if (body.error)
+    throw new Error(
+      `Ethereum account-type request failed: ${body.error.message ?? 'unknown RPC error'}.`,
+    );
+  if (typeof body.result !== 'string')
+    throw new Error('Ethereum account-type response was invalid.');
+  const code = body.result.toLowerCase();
+  return code === '0x' || code === '0x0'
+    ? 'externally-owned-account'
+    : 'smart-contract';
+}
 
 function retryableStatus(status: number) {
   return status === 429 || status >= 500;

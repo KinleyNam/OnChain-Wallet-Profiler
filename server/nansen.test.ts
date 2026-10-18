@@ -257,6 +257,9 @@ void test('live provider does not turn unverified Nansen activity into a profile
     assert.equal(record.data.transactions[0].fromAddress, address);
     assert.equal(record.data.historicalBalances.length, 1);
     assert.equal(record.data.flows[0].label, 'Example');
+    assert.equal(record.data.incoming, 20);
+    assert.equal(record.data.outgoing, 10);
+    assert.equal(record.data.volume, 30);
     assert.equal(record.data.tradePerformance?.tradedTimes, 12);
     assert.equal(record.data.defiPositions[0].protocol, 'aave-v3-ethereum');
     assert.equal(record.primaryProfile, 'Not enough data to classify');
