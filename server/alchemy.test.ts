@@ -35,6 +35,53 @@ void test('rejects receipt sets above the per-analysis verification limit', asyn
       'https://example.invalid',
       Array.from({ length: MAX_RECEIPTS_PER_ANALYSIS + 1 }, (_, index) => `0x${index}`),
     ),
-    /limited to 5,000/,
+    /limited to 100,000/,
   );
+});
+
+void test('retries only receipts rejected by provider capacity limits', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async (_input, init) => {
+    calls++;
+    const requests = JSON.parse(String(init?.body)) as Array<{
+      id: number;
+      params: string[];
+    }>;
+    return Response.json(
+      requests.map((request, index) =>
+        calls === 1 && index === 1
+          ? {
+              id: request.id,
+              error: {
+                code: -32005,
+                message: 'Your app has exceeded its compute units per second capacity.',
+              },
+            }
+          : {
+              id: request.id,
+              result: {
+                transactionHash: request.params[0],
+                from: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+                to: null,
+                status: '0x1',
+              },
+            },
+      ),
+    );
+  };
+  try {
+    const receipts = await fetchVerifiedReceipts(
+      'https://example.invalid',
+      ['0xABC', '0xDEF'],
+      0,
+    );
+    assert.equal(calls, 2);
+    assert.deepEqual(
+      receipts.map((receipt) => receipt.hash),
+      ['0xabc', '0xdef'],
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

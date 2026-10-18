@@ -74,6 +74,7 @@ export type DefiPosition = {
 
 export type WalletData = {
   transactionCoverage?: { complete: boolean; limit: number; fetched: number };
+  verifiedTransactionCoverage?: boolean;
   transactions: Transaction[];
   movements: Movement[];
   daily: number[];
@@ -87,7 +88,7 @@ export type WalletData = {
     interactionCount?: number;
     incoming: number;
     outgoing: number;
-    source?: 'transactions' | 'nansen-counterparties';
+    source?: 'transactions' | 'nansen-counterparties' | 'arkham-counterparties';
   }>;
   historicalBalances: HistoricalBalance[];
   tradePerformance: TradePerformance | null;

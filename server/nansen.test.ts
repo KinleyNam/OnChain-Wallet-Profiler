@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createNansenAnalysis, normalizeNansen } from './nansen';
+import { createNansenAnalysis, MAX_NANSEN_TRANSACTIONS, normalizeNansen } from './nansen';
 
 for (const lastPageComplete of [false, true]) {
-  void test(`retains 5,000 transactions with complete=${lastPageComplete} at the page limit`, async (t) => {
+  void test(`retains 100,000 transactions with complete=${lastPageComplete} at the page limit`, async (t) => {
     let pages = 0;
     const timestamp = new Date(Date.now() - 86_400_000).toISOString();
     const tradeTime = (i: number) => new Date(Date.parse(timestamp) - (i % 5) * 86_400_000).toISOString();
@@ -28,14 +28,14 @@ for (const lastPageComplete of [false, true]) {
         const body = JSON.parse(init.body) as { pagination: { page: number } };
         pages++;
         const page = body.pagination.page;
-        assert.ok(page <= 50);
+        assert.ok(page <= MAX_NANSEN_TRANSACTIONS / 100);
         return Response.json({
           data: Array.from({ length: 100 }, (_, i) => ({
             transaction_hash: `0x${page}-${i}`, block_timestamp: tradeTime(i),
             method: 'transfer', source_type: 'transfer', volume_usd: 1,
             tokens_sent: [], tokens_received: [],
           })),
-          pagination: { is_last_page: lastPageComplete && page === 50 },
+          pagination: { is_last_page: lastPageComplete && page === MAX_NANSEN_TRANSACTIONS / 100 },
         });
       }
       if (input.endsWith('/pnl-summary')) return Response.json({ traded_times: 7 });
@@ -43,11 +43,15 @@ for (const lastPageComplete of [false, true]) {
       return Response.json({ data: [], pagination: { is_last_page: true } });
     });
     const record = await createNansenAnalysis('0x1111111111111111111111111111111111111111', 30, 'test-key', 'https://rpc.example');
-    assert.equal(pages, 50);
+    assert.equal(pages, MAX_NANSEN_TRANSACTIONS / 100);
     assert.equal(record.status, 'complete');
     assert.equal(record.source, 'nansen');
-    assert.equal(record.data.transactions.length, 5000);
-    assert.deepEqual(record.data.transactionCoverage, { complete: lastPageComplete, limit: 5000, fetched: 5000 });
+    assert.equal(record.data.transactions.length, MAX_NANSEN_TRANSACTIONS);
+    assert.deepEqual(record.data.transactionCoverage, {
+      complete: lastPageComplete,
+      limit: MAX_NANSEN_TRANSACTIONS,
+      fetched: MAX_NANSEN_TRANSACTIONS,
+    });
     assert.equal(record.data.tradePerformance?.tradedTimes, 7);
     assert.equal(record.data.enrichmentCoverage.defiPositions, true);
     const trader = record.profiles.find((profile) => profile.name === 'Active trader')!;
@@ -259,10 +263,14 @@ void test('live provider does not turn unverified Nansen activity into a profile
     const activeTrader = record.profiles.find((item) => item.name === 'Active trader');
     assert.equal(activeTrader?.status, 'NOT_ASSIGNED');
     assert.equal(activeTrader?.variables.dex_transactions, 1);
-    assert.ok(record.profiles.filter((item) => item.name !== 'Active trader').every(
-      (item) => item.status === 'NOT_ASSESSED' && item.score === null,
-    ));
-    assert.equal(record.mappingVersion, 'mappings-v7');
+    assert.equal(
+      record.profiles.find((item) => item.name === 'DeFi participant')?.status,
+      'NOT_ASSIGNED',
+    );
+    assert.ok(record.profiles.filter(
+      (item) => !['Active trader', 'DeFi participant'].includes(item.name),
+    ).every((item) => item.status === 'NOT_ASSESSED' && item.score === null));
+    assert.equal(record.mappingVersion, 'mappings-v10');
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -317,4 +325,70 @@ void test('retrieves transactions beyond the former 1,000-record limit', async (
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+void test('feeds historical retention and verified Lido evidence into profile rules', async (t) => {
+  const address = '0x1111111111111111111111111111111111111111';
+  const transactionTime = new Date(Date.now() - 20 * 86_400_000).toISOString();
+  const boundaryTime = new Date(Date.now() - 90 * 86_400_000).toISOString();
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (url === 'https://rpc.example') {
+      const requestBody = init?.body;
+      if (typeof requestBody !== 'string') throw new Error('Expected a JSON request body.');
+      const requests = JSON.parse(requestBody) as Array<{ id: number; params: string[] }>;
+      return Response.json(requests.map((request) => ({
+        id: request.id,
+        result: {
+          transactionHash: request.params[0],
+          from: address,
+          to: '0xae7ab96520de3a18e5e111b5eaab095312d7fe84',
+          status: '0x1',
+        },
+      })));
+    }
+    if (url.endsWith('/current-balance')) return Response.json({
+      data: [{
+        token_address: '0xae7ab96520de3a18e5e111b5eaab095312d7fe84',
+        token_symbol: 'stETH', token_name: 'Lido Staked ETH',
+        token_amount: 1, price_usd: 2500, value_usd: 2500,
+      }],
+      pagination: { is_last_page: true },
+    });
+    if (url.endsWith('/historical-balances')) return Response.json({
+      data: [{
+        block_timestamp: boundaryTime,
+        token_address: '0xae7ab96520de3a18e5e111b5eaab095312d7fe84',
+        token_symbol: 'stETH', token_amount: 1, value_usd: 2400,
+      }],
+      pagination: { is_last_page: true },
+    });
+    if (url.endsWith('/transactions')) return Response.json({
+      data: [{
+        transaction_hash: '0xstake', block_timestamp: transactionTime,
+        method: 'submit(address)', source_type: 'lido', volume_usd: 2500,
+        tokens_sent: [], tokens_received: [],
+      }],
+      pagination: { is_last_page: true },
+    });
+    if (url.endsWith('/defi-holdings')) return Response.json({
+      protocols: [{
+        protocol_name: 'lido', chain: 'ethereum', total_value_usd: 2500,
+        total_assets_usd: 2500, total_debts_usd: 0, total_rewards_usd: 0,
+        tokens: [{ position_type: 'staking' }],
+      }],
+    });
+    if (url.endsWith('/pnl-summary')) return Response.json({});
+    return Response.json({ data: [], pagination: { is_last_page: true } });
+  });
+
+  const record = await createNansenAnalysis(address, 90, 'key', 'https://rpc.example');
+  assert.equal(
+    record.profiles.find((profile) => profile.name === 'Long-term holder')?.status,
+    'ASSIGNED',
+  );
+  assert.equal(
+    record.profiles.find((profile) => profile.name === 'Staking participant')?.status,
+    'ASSIGNED',
+  );
 });

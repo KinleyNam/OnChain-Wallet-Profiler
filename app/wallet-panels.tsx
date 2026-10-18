@@ -310,7 +310,7 @@ function TransactionRows({
               {t.movements.map((m) => (
                 <div key={m.id}>
                   <span>
-                    {m.direction === 'in' ? 'Received' : 'Sent'}{' '}
+                  {m.direction === 'in' ? 'Incoming' : 'Outgoing'}{' '}
                     {quantity(m.amount)} {m.token}
                   </span>
                   <p>
@@ -333,7 +333,7 @@ function TransactionRows({
 export function MovementPanel({
   movements,
   title = 'Token movements',
-  subtitle = 'ETH and ERC-20 token transfers on Ethereum for the selected period.',
+  subtitle = 'ETH and ERC-20 movements for the selected period. Direction does not prove who initiated the transaction.',
 }: {
   movements: Movement[];
   title?: string;
@@ -364,10 +364,10 @@ export function MovementPanel({
       <div className="ledger-toolbar">
         <div className="movement-totals">
           <span>
-            Received <b>{usd(incoming)}</b>
+            Incoming <b>{usd(incoming)}</b>
           </span>
           <span>
-            Sent <b>{usd(outgoing)}</b>
+            Outgoing <b>{usd(outgoing)}</b>
           </span>
         </div>
         <div className="ledger-filters">
@@ -396,8 +396,8 @@ export function MovementPanel({
               }}
             >
               <option value="all">All movements</option>
-              <option value="in">Received</option>
-              <option value="out">Sent</option>
+              <option value="in">Incoming</option>
+              <option value="out">Outgoing</option>
             </select>
           </label>
         </div>
@@ -433,7 +433,7 @@ export function MovementPanel({
                   ) : (
                     <ArrowUpRight size={14} />
                   )}
-                  {m.direction === 'in' ? 'Received' : 'Sent'}
+                  {m.direction === 'in' ? 'Incoming' : 'Outgoing'}
                 </span>
               </TableCell>
               <TableCell>
@@ -473,6 +473,7 @@ export function MovementPanel({
 }
 
 export function FundFlows({ data }: { data: WalletData }) {
+  const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<{
     name: string;
     direction: 'in' | 'out';
@@ -484,6 +485,11 @@ export function FundFlows({ data }: { data: WalletData }) {
           m.direction === selected.direction,
       )
     : data.movements;
+  const currentPage = Math.min(
+    page,
+    Math.max(0, Math.ceil(data.flows.length / PAGE_SIZE) - 1),
+  );
+  const flowSource = data.flows[0]?.source;
   return (
     <>
       <section className="panel flow-panel">
@@ -525,7 +531,9 @@ export function FundFlows({ data }: { data: WalletData }) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {data.flows.map((f) => (
+            {data.flows
+              .slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE)
+              .map((f) => (
               <TableRow key={f.name}>
                 <TableCell>
                   <div className="flow-counterparty">
@@ -572,11 +580,21 @@ export function FundFlows({ data }: { data: WalletData }) {
                 <TableCell>{usd(f.incoming + f.outgoing)}</TableCell>
               </TableRow>
             ))}
+            {!data.flows.length && (
+              <TableRow>
+                <TableCell colSpan={4} className="ledger-empty">
+                  No valued fund flows were found in this period.
+                </TableCell>
+              </TableRow>
+            )}
           </TableBody>
         </Table>
+        <Pager page={currentPage} total={data.flows.length} onChange={setPage} />
         <p className="flow-source">
-          {data.enrichmentCoverage.counterparties
-            ? 'Counterparty totals supplied by Nansen’s dedicated counterparty analysis.'
+          {flowSource === 'arkham-counterparties'
+            ? 'Counterparty totals derived from Arkham transfers in the selected period.'
+            : flowSource === 'nansen-counterparties'
+              ? 'Counterparty totals supplied by Nansen’s dedicated counterparty analysis.'
             : 'Counterparty totals derived from the retrieved token movements.'}
         </p>
       </section>

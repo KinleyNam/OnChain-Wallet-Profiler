@@ -1,5 +1,42 @@
 export type NansenCredentials = string | readonly string[] | NansenClient;
 
+const REQUEST_TIMEOUT_MS = 60_000;
+const TRANSIENT_ATTEMPTS = 2;
+
+const wait = (milliseconds: number) =>
+  new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+function transientNetworkError(error: unknown) {
+  return error instanceof Error &&
+    /abort|timeout|network|fetch failed|socket|connection/i.test(
+      `${error.name} ${error.message}`,
+    );
+}
+
+async function post(
+  url: string,
+  payload: Record<string, unknown>,
+  key: string,
+) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < TRANSIENT_ATTEMPTS; attempt++) {
+    try {
+      return await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', apikey: key },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+    } catch (error) {
+      lastError = error;
+      if (!transientNetworkError(error) || attempt + 1 === TRANSIENT_ATTEMPTS)
+        throw error;
+      await wait(500 * 2 ** attempt);
+    }
+  }
+  throw lastError;
+}
+
 export function nansenKeysFromEnv(env: Record<string, string | undefined>): string[] {
   return [...new Set([
     env.NANSEN_API_KEY,
@@ -26,12 +63,7 @@ export class NansenClient {
       const index = (start + offset) % this.keys.length;
       const key = this.keys[index];
       if ((this.exhausted.get(key) ?? 0) > Date.now()) continue;
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', apikey: key },
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(20_000),
-      });
+      const response = await post(url, payload, key);
       if (response.ok) return response;
       // Inspect errors locally, but never log provider bodies or credentials.
       const body = (await response.text()).toLowerCase().replace(/[_-]/g, ' ');

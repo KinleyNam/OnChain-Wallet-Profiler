@@ -50,3 +50,19 @@ void test('ordinary permission, rate limit, and server errors do not rotate keys
     mock.mock.restore();
   }
 });
+
+void test('retries a transient timeout with the same Nansen key', async (t) => {
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async (_url: string, init: RequestInit) => {
+    calls++;
+    assert.equal(new Headers(init.headers).get('apikey'), 'one');
+    if (calls === 1) throw new Error('The operation was aborted due to timeout');
+    return new Response('{}');
+  });
+  await new NansenClient(['one', 'two']).request(
+    'https://example.test',
+    {},
+    'transactions',
+  );
+  assert.equal(calls, 2);
+});

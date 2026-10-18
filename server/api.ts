@@ -62,6 +62,7 @@ export function createApi(store: AnalysisStore, allowedOrigin: string | undefine
   create: (address: string, periodDays: number) => Promise<AnalysisRecord>;
 }) {
   const app = Fastify({ logger: false, bodyLimit: 16 * 1024 });
+  const inFlight = new Map<string, Promise<AnalysisRecord>>();
 
   app.addHook('onRequest', async (request, reply) => {
     const origin = request.headers.origin;
@@ -143,10 +144,20 @@ export function createApi(store: AnalysisStore, allowedOrigin: string | undefine
     const id = provider.idFor(address, periodDays);
     const existing = await store.get(id);
     if (existing) return { ...summary(existing), reused: true };
-    const record = await provider.create(address, periodDays);
-    await store.put(record, ANALYSIS_TTL_SECONDS);
+    let task = inFlight.get(id);
+    const reusedInFlight = Boolean(task);
+    if (!task) {
+      task = provider.create(address, periodDays)
+        .then(async (record) => {
+          await store.put(record, ANALYSIS_TTL_SECONDS);
+          return record;
+        })
+        .finally(() => inFlight.delete(id));
+      inFlight.set(id, task);
+    }
+    const record = await task;
     reply.code(201);
-    return { ...summary(record), reused: false };
+    return { ...summary(record), reused: reusedInFlight };
   });
 
   app.get<{ Params: IdParams }>('/api/v1/analyses/:analysisId', async (request, reply) => {

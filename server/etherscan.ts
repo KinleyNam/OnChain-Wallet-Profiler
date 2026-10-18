@@ -15,11 +15,19 @@ import {
   type Transaction,
   type WalletData,
 } from '../lib/wallet-data';
+import {
+  extractDefiActions,
+  extractNftTrades,
+  type PipelineNftTransfer,
+  type PipelineTransaction,
+} from './profile-pipelines';
 
 const API = 'https://api.etherscan.io/v2/api';
 const DAY = 86_400_000;
 const PAGE_SIZE = 10_000;
 const MAX_PAGES = 10;
+const REQUEST_TIMEOUT_MS = 60_000;
+const TRANSIENT_ATTEMPTS = 2;
 
 type EtherscanResponse<T> = {
   status: string;
@@ -52,6 +60,16 @@ type TokenTransfer = {
   tokenDecimal?: string;
 };
 
+type NftTransfer = {
+  hash: string;
+  timeStamp: string;
+  from: string;
+  to: string;
+  contractAddress: string;
+  tokenID?: string;
+  tokenValue?: string;
+};
+
 const PROTOCOL_CONTRACTS = new Map<string, string>([
   ['0x7a250d5630b4cf539739df2c5dacb4c659f2488d', 'Uniswap'],
   ['0xe592427a0aece92de3edee1f18e0157c05861564', 'Uniswap'],
@@ -65,6 +83,8 @@ const PROTOCOL_CONTRACTS = new Map<string, string>([
   ['0x00000000000000adc04c56bf30ac9d3c0aaf14dc', 'OpenSea'],
   ['0x0000000000000068f116a894984e2db1123eb395', 'OpenSea'],
   ['0x000000000000ad05ccc4f10045630fb830b95127', 'Blur'],
+  ['0xb2ecfe4e4d61f8790bbb9de2d1259b9e2410cea5', 'Blur'],
+  ['0x0000000000000000000000000000000000000000', 'No protocol'],
 ]);
 
 function timestamp(seconds: string) {
@@ -94,7 +114,23 @@ async function query<T>(key: string, action: string, params: Record<string, stri
     ...params,
     apikey: key,
   })) url.searchParams.set(name, value);
-  const response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+  let response: Response | undefined;
+  let lastError: unknown;
+  for (let attempt = 0; attempt < TRANSIENT_ATTEMPTS; attempt++) {
+    try {
+      response = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+      break;
+    } catch (error) {
+      lastError = error;
+      const transient = error instanceof Error &&
+        /abort|timeout|network|fetch failed|socket|connection/i.test(
+          `${error.name} ${error.message}`,
+        );
+      if (!transient || attempt + 1 === TRANSIENT_ATTEMPTS) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
+    }
+  }
+  if (!response) throw lastError;
   if (!response.ok)
     throw new Error(`Etherscan ${action} request failed (${response.status}).`);
   const body = (await response.json()) as EtherscanResponse<T>;
@@ -289,13 +325,75 @@ export async function createEtherscanAnalysis(
     'ERC-20 transfers',
     allPages<TokenTransfer>(key, 'tokentx', normalized),
   );
+  const nft721 = await optional(
+    'ERC-721 transfers',
+    allPages<NftTransfer>(key, 'tokennfttx', normalized),
+  );
+  const nft1155 = await optional(
+    'ERC-1155 transfers',
+    allPages<NftTransfer>(key, 'token1155tx', normalized),
+  );
   const data = buildWalletData(normalized, periodDays, asOf, normal.rows, tokens?.rows ?? []);
+  data.transactionCoverage = {
+    complete: normal.complete,
+    limit: PAGE_SIZE * MAX_PAGES,
+    fetched: normal.rows.length,
+  };
+  data.verifiedTransactionCoverage = normal.complete;
   const verifiedTransactions = normal.rows.map((row) => ({
     hash: row.hash.toLowerCase(),
     timestamp: timestamp(row.timeStamp),
     fromAddress: row.from.toLowerCase(),
     successful: row.isError !== '1' && row.txreceipt_status !== '0',
   })).filter((row) => row.timestamp);
+  const fungibleByHash = new Map<string, TokenTransfer[]>();
+  for (const row of tokens?.rows ?? []) {
+    const rows = fungibleByHash.get(row.hash.toLowerCase()) ?? [];
+    rows.push(row);
+    fungibleByHash.set(row.hash.toLowerCase(), rows);
+  }
+  const pipelineTransactions: PipelineTransaction[] = normal.rows.map((row) => {
+    const hash = row.hash.toLowerCase();
+    const fungible = fungibleByHash.get(hash) ?? [];
+    const token = (item: TokenTransfer) => ({
+      tokenAddress: item.contractAddress,
+      symbol: item.tokenSymbol,
+      amount: amount(item.value, item.tokenDecimal ?? '0'),
+      valueUsd: 0,
+      fromAddress: item.from,
+      toAddress: item.to,
+    });
+    return {
+      hash,
+      timestamp: timestamp(row.timeStamp),
+      method: row.functionName || row.methodId || '',
+      protocol: protocolFor(row.to ?? ''),
+      fromAddress: row.from.toLowerCase(),
+      successful: row.isError !== '1' && row.txreceipt_status !== '0',
+      nativeAmount: amount(row.value, 18),
+      tokensSent: fungible.filter((item) => item.from.toLowerCase() === normalized).map(token),
+      tokensReceived: fungible.filter((item) => item.to.toLowerCase() === normalized).map(token),
+    };
+  }).filter((row) => row.timestamp);
+  const nftTransfers: PipelineNftTransfer[] = [
+    ...(nft721?.rows ?? []),
+    ...(nft1155?.rows ?? []),
+  ].map((row) => ({
+    hash: row.hash.toLowerCase(),
+    timestamp: timestamp(row.timeStamp),
+    fromAddress: row.from.toLowerCase(),
+    toAddress: row.to.toLowerCase(),
+    collectionId: `ethereum:${row.contractAddress.toLowerCase()}`,
+  })).filter((row) => row.timestamp);
+  const defiActions = extractDefiActions(normalized, pipelineTransactions);
+  const nftTrades = extractNftTrades({
+    wallet: normalized,
+    transactions: pipelineTransactions,
+    nftTransfers,
+  });
+  const completeTransactions = normal.complete;
+  const completeNftHistory = completeTransactions && tokens?.complete === true &&
+    nft721?.complete === true && nft1155?.complete === true;
   const profiles = classify(buildClassificationEvidence({
     address: normalized,
     cutoff: asOf,
@@ -304,15 +402,15 @@ export async function createEtherscanAnalysis(
       transactions90d: normal.complete,
       lifetimeTransactions: normal.complete,
       dexTrades30d: false,
-      defiActions30d: false,
-      nftTrades30d: false,
+      defiActions30d: periodDays >= 30 && completeTransactions,
+      nftTrades30d: periodDays >= 30 && completeNftHistory,
       holdingHistory90d: false,
       stakingPositionsAndDeposits: false,
     },
     transactions: verifiedTransactions,
     dexTrades: [],
-    defiActions: [],
-    nftTrades: [],
+    defiActions,
+    nftTrades,
     holdings: [],
     stakingPositions: [],
   }));
