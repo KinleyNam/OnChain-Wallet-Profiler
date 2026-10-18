@@ -108,6 +108,33 @@ void test('rejects invalid addresses and periods', async () => {
   assert.equal(response.statusCode, 400);
 });
 
+void test('rejects smart contracts before creating or reusing an analysis', async () => {
+  let createCalls = 0;
+  const contractApi = createApi(store, undefined, {
+    idFor: analysisIdFor,
+    async getAccountType() {
+      return 'smart-contract';
+    },
+    async create() {
+      createCalls++;
+      throw new Error('Contract analysis must not run.');
+    },
+  });
+  try {
+    const response = await contractApi.inject({
+      method: 'POST',
+      url: '/api/v1/analyses',
+      payload: { address, periodDays: 30 },
+    });
+    assert.equal(response.statusCode, 422);
+    assert.equal(response.json().code, 'SMART_CONTRACT_ADDRESS');
+    assert.equal(response.json().accountType, 'smart-contract');
+    assert.equal(createCalls, 0);
+  } finally {
+    await contractApi.close();
+  }
+});
+
 void test('reports a safe reason for provider failures', async () => {
   const failing = createApi(store, undefined, {
     idFor: () => '00000000000000000000000000000000',

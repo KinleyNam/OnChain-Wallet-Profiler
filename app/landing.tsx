@@ -17,7 +17,7 @@ import {
 export default function Landing() {
   const [address, setAddress] = useState('');
   const [error, setError] = useState('');
-  function openProfile(event: React.FormEvent<HTMLFormElement>) {
+  function openProfile(event: React.SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     const value = address.trim();
     if (!/^0x[a-fA-F0-9]{40}$/.test(value)) {
@@ -273,7 +273,7 @@ export default function Landing() {
           <Blocks size={20} />
           <span>OnChain</span>
         </a>
-        <p>© {new Date().getFullYear()} Onchain Wallet Profiler. All rights reserved.</p>
+        <p>Ethereum wallet analytics</p>
         <a href="/profiler">
           Open profiler <ArrowUpRight size={14} />
         </a>

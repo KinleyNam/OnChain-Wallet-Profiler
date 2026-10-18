@@ -3,11 +3,21 @@ import type { ProfileResult } from '../server/analysis';
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
 
+export class AnalysisApiError extends Error {
+  constructor(message: string, readonly code?: string) {
+    super(message);
+    this.name = 'AnalysisApiError';
+  }
+}
+
 async function json<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, options);
   const body = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new Error(body?.error ?? `Analysis request failed (${response.status}).`);
+    throw new AnalysisApiError(
+      body?.error ?? `Analysis request failed (${response.status}).`,
+      body?.code,
+    );
   }
   return body as T;
 }

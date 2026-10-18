@@ -490,6 +490,12 @@ export function FundFlows({ data }: { data: WalletData }) {
     Math.max(0, Math.ceil(data.flows.length / PAGE_SIZE) - 1),
   );
   const flowSource = data.flows[0]?.source;
+  const incoming = data.flows.length
+    ? data.flows.reduce((sum, flow) => sum + flow.incoming, 0)
+    : data.incoming;
+  const outgoing = data.flows.length
+    ? data.flows.reduce((sum, flow) => sum + flow.outgoing, 0)
+    : data.outgoing;
   return (
     <>
       <section className="panel flow-panel">
@@ -502,15 +508,15 @@ export function FundFlows({ data }: { data: WalletData }) {
         <div className="flow-totals">
           <div>
             <span>Incoming</span>
-            <strong>{usd(data.incoming)}</strong>
+            <strong>{usd(incoming)}</strong>
           </div>
           <div>
             <span>Outgoing</span>
-            <strong>{usd(data.outgoing)}</strong>
+            <strong>{usd(outgoing)}</strong>
           </div>
           <div>
             <span>Net flow</span>
-            <strong>{usd(data.incoming - data.outgoing)}</strong>
+            <strong>{usd(incoming - outgoing)}</strong>
           </div>
         </div>
         <p className="flow-note">

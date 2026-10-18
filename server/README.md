@@ -11,6 +11,8 @@ The backend serves Ethereum wallet analyses at `/api/v1` on port 3001. Nansen, E
 
 Set at least one of `NANSEN_API_KEY1`, `ETHERSCAN_API_KEY`, or `ARKHAM_API_KEY`. Check `http://127.0.0.1:3001/api/v1/health` to verify Redis connectivity. `npm.cmd run test:api` runs tests with fixtures and does not contact external providers.
 
+When `ETHEREUM_RPC_URL` is configured, the API checks `eth_getCode` before cache lookup or provider retrieval. Addresses with deployed bytecode receive `422 SMART_CONTRACT_ADDRESS`; wallet analysis is limited to externally owned accounts. The frontend opens without a default address and starts an analysis only after an address is submitted or supplied explicitly in the URL.
+
 ## Endpoints
 
 `POST /api/v1/analyses` accepts `{ "address": "0x…", "periodDays": 30 | 90 | 180 }` and returns an `analysisId`. Under `/api/v1/analyses/{analysisId}`, GET paths are `/status`, `/data`, `/balances`, `/historical-balances`, `/trade-performance`, `/defi-positions`, `/transactions`, `/token-movements`, `/fund-flows`, `/protocols`, `/protocols/{protocolId}/transactions`, `/profiles`, `/profile-evidence`, `/risk-indicators`, `/retrieval-status`, and `/export`. Transaction and movement endpoints accept `limit` (1–100) and `offset`. Movements also accept `token` and `direction` (`in` or `out`). Export returns JSON.

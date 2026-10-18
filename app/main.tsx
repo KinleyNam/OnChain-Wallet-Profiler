@@ -16,9 +16,9 @@ createRoot(document.getElementById('root')!).render(
   isProfiler ? (
       <Suspense
         fallback={
-          <main className="page" role="status">
+          <output className="page">
             Loading wallet profiler…
-          </main>
+          </output>
         }
       >
         <Profiler />

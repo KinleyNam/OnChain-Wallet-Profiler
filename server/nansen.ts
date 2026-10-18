@@ -372,10 +372,10 @@ export function normalizeNansen(
       share: protocolTransactionCount ? (count / protocolTransactionCount) * 100 : 0,
     };
   });
-  const incoming = movements
+  const movementIncoming = movements
     .filter((item) => item.direction === 'in')
     .reduce((sum, item) => sum + item.usd, 0);
-  const outgoing = movements
+  const movementOutgoing = movements
     .filter((item) => item.direction === 'out')
     .reduce((sum, item) => sum + item.usd, 0);
   const flowTotals = new Map<string, { name: string; incoming: number; outgoing: number }>();
@@ -405,6 +405,12 @@ export function normalizeNansen(
     source: 'nansen-counterparties' as const,
   })).sort((a, b) => b.incoming + b.outgoing - a.incoming - a.outgoing);
   const flows = dedicatedFlows ?? transactionFlows;
+  const incoming = dedicatedFlows
+    ? dedicatedFlows.reduce((sum, flow) => sum + flow.incoming, 0)
+    : movementIncoming;
+  const outgoing = dedicatedFlows
+    ? dedicatedFlows.reduce((sum, flow) => sum + flow.outgoing, 0)
+    : movementOutgoing;
   const historicalBalances = (enrichment.historicalBalances ?? []).map((row) => ({
     timestamp: row.block_timestamp,
     tokenAddress: row.token_address,

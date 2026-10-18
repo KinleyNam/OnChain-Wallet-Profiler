@@ -60,6 +60,7 @@ function summary(record: AnalysisRecord) {
 export function createApi(store: AnalysisStore, allowedOrigin: string | undefined, provider: {
   idFor: (address: string, periodDays: number) => string;
   create: (address: string, periodDays: number) => Promise<AnalysisRecord>;
+  getAccountType?: (address: string) => Promise<'externally-owned-account' | 'smart-contract'>;
 }) {
   const app = Fastify({ logger: false, bodyLimit: 16 * 1024 });
   const inFlight = new Map<string, Promise<AnalysisRecord>>();
@@ -140,6 +141,17 @@ export function createApi(store: AnalysisStore, allowedOrigin: string | undefine
         !PERIODS.includes(periodDays as (typeof PERIODS)[number])) {
       reply.code(400);
       return { error: 'Provide an Ethereum address and a periodDays value of 30, 90, or 180.' };
+    }
+    if (provider.getAccountType) {
+      const accountType = await provider.getAccountType(address);
+      if (accountType === 'smart-contract') {
+        reply.code(422);
+        return {
+          code: 'SMART_CONTRACT_ADDRESS',
+          accountType,
+          error: 'This address is a smart contract. Behavioral wallet analysis is only available for externally owned accounts.',
+        };
+      }
     }
     const id = provider.idFor(address, periodDays);
     const existing = await store.get(id);

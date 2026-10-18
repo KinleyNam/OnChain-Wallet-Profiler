@@ -1,6 +1,10 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { usd, type WalletData } from '@/lib/wallet-data';
-import { downloadWalletExport, loadWalletAnalysis } from '@/lib/analysis-api';
+import {
+  AnalysisApiError,
+  downloadWalletExport,
+  loadWalletAnalysis,
+} from '@/lib/analysis-api';
 import { WalletLoading } from './wallet-loading';
 import type { ProfileResult } from '../server/analysis';
 import {
@@ -22,15 +26,6 @@ import {
   Wallet,
   Zap,
 } from 'lucide-react';
-import {
-  AreaChart,
-  Area,
-  ResponsiveContainer,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-} from 'recharts';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
   Select,
@@ -46,7 +41,8 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 
-const example = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045';
+const ActivityChart = lazy(() => import('./activity-chart'));
+
 const tabRoutes = {
   overview: 'Overview',
   balances: 'Balances',
@@ -71,7 +67,7 @@ export default function Home() {
   const suppliedAddress = initialParams.get('address')?.trim() ?? '';
   const initialAddress = /^0x[a-fA-F0-9]{40}$/.test(suppliedAddress)
     ? suppliedAddress
-    : example;
+    : '';
   const suppliedPeriod = initialParams.get('period');
   const initialPeriod = ['30', '90', '180'].includes(suppliedPeriod ?? '')
     ? suppliedPeriod!
@@ -91,14 +87,17 @@ export default function Home() {
     [providerCutoff, setProviderCutoff] = useState<string | null>(null),
     [serverIndicators, setServerIndicators] = useState<{ score: number; band: string; signals: Array<{ name: string; detected: boolean; value: string }> } | null>(null),
     [serviceError, setServiceError] = useState(''),
+    [serviceErrorCode, setServiceErrorCode] = useState(''),
     [retry, setRetry] = useState(0),
     [modal, setModal] = useState<string | null>(null),
     [copied, setCopied] = useState(false),
-    [selectedProtocol, setSelectedProtocol] = useState<string | null>(null);
+    [selectedProtocol, setSelectedProtocol] = useState<string | null>(null),
+    [walletData, setWalletData] = useState<WalletData | null>(null);
   function updateRoute(nextTab: TabId, mode: 'push' | 'replace' = 'push') {
     const nextUrl = new URL(window.location.href);
     nextUrl.pathname = `/profiler/${tabRoutes[nextTab]}`;
-    nextUrl.searchParams.set('address', address);
+    if (address) nextUrl.searchParams.set('address', address);
+    else nextUrl.searchParams.delete('address');
     nextUrl.searchParams.set('period', period);
     window.history[mode === 'push' ? 'pushState' : 'replaceState'](
       {},
@@ -113,7 +112,8 @@ export default function Home() {
     if (window.location.pathname.replace(/\/$/, '') === '/profiler') {
       const nextUrl = new URL(window.location.href);
       nextUrl.pathname = `/profiler/${tabRoutes[currentTab]}`;
-      nextUrl.searchParams.set('address', initialAddress);
+      if (initialAddress) nextUrl.searchParams.set('address', initialAddress);
+      else nextUrl.searchParams.delete('address');
       nextUrl.searchParams.set('period', initialPeriod);
       window.history.replaceState({}, '', nextUrl);
     }
@@ -126,6 +126,13 @@ export default function Home() {
         if (restoredAddress !== address) setReady(false);
         setAddress(restoredAddress);
         setInput(restoredAddress);
+      } else {
+        setAddress('');
+        setInput('');
+        setWalletData(null);
+        setServerProfiles(null);
+        setServerIndicators(null);
+        setReady(false);
       }
       if (['30', '90', '180'].includes(restoredPeriod ?? '')) {
         if (restoredPeriod !== period) setReady(false);
@@ -136,8 +143,8 @@ export default function Home() {
     window.addEventListener('popstate', restoreRoute);
     return () => window.removeEventListener('popstate', restoreRoute);
   }, [initialAddress, initialPeriod, address, period]);
-  const [walletData, setWalletData] = useState<WalletData | null>(null);
   useEffect(() => {
+    if (!address) return;
     const controller = new AbortController();
     loadWalletAnalysis(address, Number(period), controller.signal)
       .then((result) => {
@@ -160,6 +167,7 @@ export default function Home() {
       .catch((cause: unknown) => {
         if (controller.signal.aborted) return;
         setServiceError(cause instanceof Error ? cause.message : 'The analysis service is unavailable.');
+        setServiceErrorCode(cause instanceof AnalysisApiError ? cause.code ?? '' : '');
       });
     return () => controller.abort();
   }, [address, period, retry]);
@@ -173,6 +181,7 @@ export default function Home() {
     }
     setError('');
     setServiceError('');
+    setServiceErrorCode('');
     setReady(false);
     setAddress(nextAddress);
     setRetry((value) => value + 1);
@@ -214,10 +223,18 @@ export default function Home() {
             </form>
             {error && <p className="error" role="alert">{error}</p>}
             {serviceError ? <div role="alert" className="loading-error">
-              <h2>Analysis unavailable</h2>
+              <h2>{serviceErrorCode === 'SMART_CONTRACT_ADDRESS' ? 'Smart contract detected' : 'Analysis unavailable'}</h2>
               <p>{serviceError}</p>
-              <button className="secondary" type="button" onClick={() => { setServiceError(''); setRetry((value) => value + 1); }}>Try again</button>
-            </div> : <WalletLoading tab={tab} period={period} />}
+              {serviceErrorCode !== 'SMART_CONTRACT_ADDRESS' && (
+                <button className="secondary" type="button" onClick={() => { setServiceError(''); setServiceErrorCode(''); setRetry((value) => value + 1); }}>Try again</button>
+              )}
+            </div> : address ? <WalletLoading tab={tab} period={period} /> : (
+              <section className="profiler-empty" aria-labelledby="profiler-empty-title">
+                <span className="profiler-empty-icon" aria-hidden="true"><Wallet size={25} /></span>
+                <h2 id="profiler-empty-title">Enter a wallet address to start analysis</h2>
+                <p>Paste an Ethereum externally owned account above. Smart contract addresses are identified before analysis begins.</p>
+              </section>
+            )}
           </div>
         </main>
       </div>
@@ -247,6 +264,12 @@ export default function Home() {
   const unattributed = protocols.find(
     (protocol) => protocol.name === 'Unknown' && protocol.count > 0,
   );
+  const displayedTransferVolume = walletData.flows.length
+    ? walletData.flows.reduce(
+        (sum, flow) => sum + flow.incoming + flow.outgoing,
+        0,
+      )
+    : walletData.volume;
   const profileResults = serverProfiles;
   const assignedProfiles = profileResults.filter((profile) => profile.assigned).sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
   const classification = serverPrimary;
@@ -416,74 +439,21 @@ export default function Home() {
     </section>
   );
   const activityChart = (
-    <section className="panel activity-panel">
-      <div className="panel-heading">
-        <div>
-          <h2>Transaction activity</h2>
-          <p>Transactions per interval</p>
-        </div>
-        <span className="legend">
-          <i /> Transactions
-        </span>
-      </div>
-      <div className="chart">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart
-            data={chart}
-            margin={{ top: 12, right: 12, left: -22, bottom: 0 }}
-          >
-            <defs>
-              <linearGradient id="activityFill" x1="0" y1="0" x2="0" y2="1">
-                <stop
-                  offset="0%"
-                  stopColor="var(--chart-line)"
-                  stopOpacity={0.26}
-                />
-                <stop
-                  offset="100%"
-                  stopColor="var(--chart-line)"
-                  stopOpacity={0}
-                />
-              </linearGradient>
-            </defs>
-            <CartesianGrid
-              vertical={false}
-              stroke="var(--border)"
-              strokeDasharray="3 5"
-            />
-            <XAxis
-              dataKey="day"
-              stroke="var(--text-muted)"
-              axisLine={false}
-              tickLine={false}
-              minTickGap={45}
-              fontSize={12}
-            />
-            <YAxis
-              stroke="var(--text-muted)"
-              axisLine={false}
-              tickLine={false}
-              fontSize={12}
-            />
-            <Tooltip
-              contentStyle={{
-                background: 'var(--surface)',
-                border: '1px solid var(--border)',
-                color: 'var(--foreground)',
-                borderRadius: 8,
-              }}
-            />
-            <Area
-              type="monotone"
-              dataKey="transactions"
-              stroke="var(--chart-line)"
-              strokeWidth={2.5}
-              fill="url(#activityFill)"
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
-    </section>
+    <Suspense
+      fallback={
+        <section className="panel activity-panel" aria-busy="true">
+          <div className="panel-heading">
+            <div>
+              <h2>Transaction activity</h2>
+              <p>Preparing chart…</p>
+            </div>
+          </div>
+          <div className="chart" />
+        </section>
+      }
+    >
+      <ActivityChart data={chart} />
+    </Suspense>
   );
   const evidence = (
     <section className="panel evidence">
@@ -543,7 +513,7 @@ export default function Home() {
     {
       icon: ArrowUpRight,
       title: 'Transfer volume',
-      value: usd(walletData.volume),
+      value: usd(displayedTransferVolume),
       desc: 'Gross incoming + outgoing value',
     },
     {
