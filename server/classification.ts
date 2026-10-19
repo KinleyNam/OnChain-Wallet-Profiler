@@ -62,6 +62,7 @@ export type ClassificationEvidence = {
   dormantOrNew?: {
     firstActivityKnown?: boolean;
     firstActivityAt?: string | null;
+    oldestObservedInitiatedAt?: string | null;
     lifetimeInitiatedTransactions?: number;
     initiatedTransactions90d?: number;
   };
@@ -497,7 +498,30 @@ export function classify(evidence: ClassificationEvidence): ProfileResult[] {
   const first = inactivity.firstActivityAt
     ? Date.parse(inactivity.firstActivityAt)
     : null;
-  if (
+  const oldestObserved = inactivity.oldestObservedInitiatedAt
+    ? Date.parse(inactivity.oldestObservedInitiatedAt)
+    : first;
+  const knownOlderThanNew = oldestObserved !== null &&
+    Number.isFinite(oldestObserved) &&
+    (cutoff - oldestObserved) / 86_400_000 > PROFILE_RULES.dormantOrNew.newAgeDays;
+  // A verified recent send rules out dormancy even when older lifetime
+  // history is unavailable from the provider.
+  if ((inactivity.initiatedTransactions90d ?? 0) > 0 && knownOlderThanNew) {
+    results.push(
+      result(
+        'Dormant or new wallet',
+        null,
+        null,
+        false,
+        `${inactivity.initiatedTransactions90d} wallet-initiated transactions in 90 days; the wallet is not dormant.`,
+        [],
+        {
+          first_activity_at: inactivity.firstActivityAt ?? null,
+          transactions_90d: inactivity.initiatedTransactions90d!,
+        },
+      ),
+    );
+  } else if (
     inactivity.firstActivityKnown !== true ||
     !Number.isFinite(cutoff) ||
     (first !== null && (!Number.isFinite(first) || first > cutoff))

@@ -8,6 +8,7 @@ import {
 export type { ProfileResult } from './classification';
 
 export const ANALYSIS_TTL_SECONDS = 10 * 60;
+const DATA_PIPELINE_VERSION = 'nansen-etherscan-v2';
 export const PERIODS = [30, 90, 180] as const;
 export const ETHEREUM_ADDRESS = /^0x[a-fA-F0-9]{40}$/;
 
@@ -17,8 +18,8 @@ export type AnalysisRecord = {
   network: 'ethereum-mainnet';
   periodDays: number;
   status: 'complete';
-  source: 'nansen' | 'etherscan' | 'arkham';
-  sources?: Array<'nansen' | 'etherscan' | 'alchemy' | 'arkham'>;
+  source: 'nansen' | 'etherscan';
+  sources?: Array<'nansen' | 'etherscan' | 'alchemy'>;
   generatedAt: string;
   analysisCutoff: string;
   providerDataCutoff: string | null;
@@ -32,6 +33,6 @@ export type AnalysisRecord = {
 
 export function analysisIdFor(address: string, periodDays: number) {
   const snapshot = new Date().toISOString().slice(0, 10);
-  const fingerprint = `${address.toLowerCase()}:${periodDays}:${snapshot}:${CLASSIFICATION_RULE_VERSION}:${MAPPING_VERSION}`;
+  const fingerprint = `${address.toLowerCase()}:${periodDays}:${snapshot}:${CLASSIFICATION_RULE_VERSION}:${MAPPING_VERSION}:${DATA_PIPELINE_VERSION}`;
   return createHash('sha256').update(fingerprint).digest('hex').slice(0, 32);
 }

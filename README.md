@@ -10,7 +10,7 @@ For a complete folder-by-folder explanation, startup trace, and the exact intern
 npm.cmd install
 ```
 
-Copy `server/.env.example` to `server/.env.local`, then set `REDIS_URL` and at least one wallet provider key. Nansen, Etherscan, Arkham, and the optional Alchemy RPC can be combined. Run the API:
+Copy `server/.env.example` to `server/.env.local`, then set `REDIS_URL` and at least one wallet provider key. Nansen and Etherscan can be combined with the optional Alchemy RPC. Run the API:
 
 ```powershell
 npm.cmd run dev:api
@@ -26,7 +26,7 @@ Open `http://localhost:3000/profiler/Overview`. The frontend proxies `/api` requ
 
 Nansen data is fetched and cached for 10 minutes per address and analysis period. API requests may consume Nansen credits. Transaction retrieval supports up to 100,000 records per analysis; if that ceiling is reached before the provider confirms the final page, the result is saved with incomplete transaction coverage. The 10,000-balance retrieval limit remains unchanged.
 
-The six classification decisions follow `classification-v1.0` in [server/classification-rules.ts](server/classification-rules.ts). The [evidence builder](server/classification-evidence.ts) counts verified, deduplicated actions in the fixed rule windows, and the [decision engine](server/classification.ts) applies points and mandatory minimums. Nansen supplies wallet activity, 90-day balance snapshots, and current DeFi positions; Etherscan supplies lifetime transactions and NFT transfer history; Arkham supplies optional balances, counterparties, loan positions, and verified swaps; and Alchemy verifies receipts. The backend now extracts evidence for active trading, long-term holding, DeFi participation, NFT trading, staking, and dormant/new-wallet decisions. A large transaction count alone does not prove a profile; affected results display **Not enough data** when a required dataset is unavailable or incomplete.
+The six classification decisions follow `classification-v1.0` in [server/classification-rules.ts](server/classification-rules.ts). The [evidence builder](server/classification-evidence.ts) counts verified, deduplicated actions in the fixed rule windows, and the [decision engine](server/classification.ts) applies points and mandatory minimums. Nansen supplies wallet activity, 90-day balance snapshots, and current DeFi positions; Etherscan supplies lifetime transactions and NFT transfer history; and Alchemy verifies receipts. The backend extracts evidence for active trading, long-term holding, DeFi participation, NFT trading, staking, and dormant/new-wallet decisions. A large transaction count alone does not prove a profile; affected results display **Not enough data** when a required dataset is unavailable or incomplete.
 
 ```powershell
 npm.cmd run build

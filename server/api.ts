@@ -7,6 +7,7 @@ import {
 } from './analysis';
 import type { AnalysisStore } from './store';
 import { calculateIndicators } from './indicators';
+import { reconcileWalletAnalysis } from './wallet-provider';
 
 type IdParams = { analysisId: string };
 type ProtocolParams = IdParams & { protocolId: string };
@@ -123,7 +124,7 @@ export function createApi(store: AnalysisStore, allowedOrigin: string | undefine
     }
     const record = await store.get(id);
     if (!record) reply.code(404).send({ error: 'Analysis not found or expired.' });
-    return record;
+    return record ? reconcileWalletAnalysis(record) : null;
   }
 
   app.get('/api/v1/health', async (_request, reply) => {
@@ -155,7 +156,7 @@ export function createApi(store: AnalysisStore, allowedOrigin: string | undefine
     }
     const id = provider.idFor(address, periodDays);
     const existing = await store.get(id);
-    if (existing) return { ...summary(existing), reused: true };
+    if (existing) return { ...summary(reconcileWalletAnalysis(existing)), reused: true };
     let task = inFlight.get(id);
     const reusedInFlight = Boolean(task);
     if (!task) {

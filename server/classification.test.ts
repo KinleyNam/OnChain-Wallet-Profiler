@@ -176,6 +176,17 @@ void test('new and dormant boundaries use wallet-initiated lifetime history with
   assert.equal(profile(input, 'Dormant or new wallet').status, 'NOT_ASSIGNED');
 });
 
+void test('verified recent sends and older observed activity rule out dormancy without complete lifetime history', () => {
+  const input = complete();
+  input.dormantOrNew = {
+    oldestObservedInitiatedAt: '2026-03-26T12:00:00Z',
+    initiatedTransactions90d: 2,
+  };
+  const dormant = profile(input, 'Dormant or new wallet');
+  assert.equal(dormant.status, 'NOT_ASSIGNED');
+  assert.equal(dormant.variables.transactions_90d, 2);
+});
+
 void test('one missing profile does not suppress another verified assignment', () => {
   const input = complete();
   delete input.nftTrader;

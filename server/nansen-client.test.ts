@@ -38,8 +38,8 @@ void test('all exhausted keys stop retrying and become eligible after cooldown',
   assert.equal(calls, 8);
 });
 
-void test('ordinary permission, rate limit, and server errors do not rotate keys', async (t) => {
-  for (const status of [401, 403, 429, 500]) {
+void test('ordinary permission and rate limit errors do not rotate keys', async (t) => {
+  for (const status of [401, 403, 429]) {
     let calls = 0;
     const mock = t.mock.method(globalThis, 'fetch', async () => {
       calls++;
@@ -49,6 +49,39 @@ void test('ordinary permission, rate limit, and server errors do not rotate keys
     assert.equal(calls, 1);
     mock.mock.restore();
   }
+});
+
+void test('retries a transient server error with the same key and payload', async (t) => {
+  const calls: Array<{ key: string | null; body: unknown }> = [];
+  t.mock.method(globalThis, 'fetch', async (_url: string, init: RequestInit) => {
+    const body = init.body;
+    if (typeof body !== 'string') throw new Error('Expected a JSON request body.');
+    calls.push({
+      key: new Headers(init.headers).get('apikey'),
+      body: JSON.parse(body) as unknown,
+    });
+    return calls.length === 1 ? new Response('', { status: 500 }) : Response.json({ data: [] });
+  });
+  await new NansenClient(['one', 'two']).request(
+    'https://example.test', { pagination: { page: 3 } }, 'transactions',
+  );
+  assert.deepEqual(calls, [
+    { key: 'one', body: { pagination: { page: 3 } } },
+    { key: 'one', body: { pagination: { page: 3 } } },
+  ]);
+});
+
+void test('a persistent server error stops after bounded retries without rotating keys', async (t) => {
+  const keys: Array<string | null> = [];
+  t.mock.method(globalThis, 'fetch', async (_url: string, init: RequestInit) => {
+    keys.push(new Headers(init.headers).get('apikey'));
+    return new Response('', { status: 500 });
+  });
+  await assert.rejects(
+    new NansenClient(['one', 'two']).request('https://example.test', {}, 'transactions'),
+    /transactions request failed \(500\)/,
+  );
+  assert.deepEqual(keys, ['one', 'one']);
 });
 
 void test('retries a transient timeout with the same Nansen key', async (t) => {

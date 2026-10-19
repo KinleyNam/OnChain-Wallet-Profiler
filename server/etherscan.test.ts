@@ -69,3 +69,34 @@ void test('Etherscan pipeline classifies decoded DeFi actions and verified marke
   assert.equal(nft?.status, 'ASSIGNED');
   assert.equal(nft?.score, 100);
 });
+
+void test('Etherscan pages through its 1,000-row response cap and uses recent sends for dormancy', async (t) => {
+  const at = (days: number) => String(Math.floor((Date.now() - days * 86_400_000) / 1000));
+  const old = Array.from({ length: 1_000 }, (_, index) => ({
+    hash: `0xold${index}`, timeStamp: at(400), from: index === 0 ? wallet : other,
+    to: index === 0 ? other : wallet, value: '0', isError: '0', txreceipt_status: '1',
+  }));
+  const recent = Array.from({ length: 1_000 }, (_, index) => ({
+    hash: `0xrecent${index}`, timeStamp: at(1), from: index === 0 ? wallet : other,
+    to: index === 0 ? other : wallet, value: '0', isError: '0', txreceipt_status: '1',
+  }));
+  const pages: number[] = [];
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+    const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
+    if (url.searchParams.get('action') !== 'txlist')
+      return Response.json({ status: '0', message: 'No transactions found', result: [] });
+    assert.equal(url.searchParams.get('offset'), '1000');
+    const page = Number(url.searchParams.get('page'));
+    pages.push(page);
+    const ascending = url.searchParams.get('sort') === 'asc';
+    return Response.json({
+      status: '1', message: 'OK',
+      result: page === 1 ? (ascending ? old : recent) : page === 2 ? (ascending ? recent : old) : [],
+    });
+  });
+
+  const record = await createEtherscanAnalysis(wallet, 90, 'key');
+  assert.deepEqual(pages, [1, 2, 3]);
+  assert.equal(record.data.transactions.length, 1_000);
+  assert.equal(record.profiles.find((profile) => profile.name === 'Dormant or new wallet')?.status, 'NOT_ASSIGNED');
+});

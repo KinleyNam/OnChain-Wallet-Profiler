@@ -1,15 +1,15 @@
 # Analysis API
 
-The backend serves Ethereum wallet analyses at `/api/v1` on port 3001. Nansen, Etherscan, and Arkham are queried independently so a failed provider does not discard successful results from the others. Nansen supplies detailed activity, historical balances, and current DeFi positions. Etherscan supplies lifetime Ethereum transactions plus ERC-20, ERC-721, and ERC-1155 transfer history. Arkham supplies balances, counterparties, loan positions, transfers, and verified swaps, and Alchemy verifies Nansen transaction receipts. Arkham can also produce a reduced fallback analysis if both Nansen and Etherscan are unavailable. Completed snapshots are cached in Redis for 10 minutes.
+The backend serves Ethereum wallet analyses at `/api/v1` on port 3001. Nansen and Etherscan are queried independently so a failed provider does not discard successful results from the other. Nansen supplies detailed activity, historical balances, and current DeFi positions. Etherscan supplies lifetime Ethereum transactions plus ERC-20, ERC-721, and ERC-1155 transfer history. Alchemy verifies Nansen transaction receipts. Completed snapshots are cached in Redis for 10 minutes.
 
 ## Local setup
 
 1. Start a local Redis instance or create a Redis Cloud database.
-2. Copy `server/.env.example` to `server/.env.local` and set `REDIS_URL` plus the available provider keys. `ARKHAM_API_BASE_URL` defaults to `https://api.arkm.com`. This local file is ignored by Git. Use `rediss://` if TLS is enabled by your Redis provider.
+2. Copy `server/.env.example` to `server/.env.local` and set `REDIS_URL` plus the available provider keys. This local file is ignored by Git. Use `rediss://` if TLS is enabled by your Redis provider.
 3. In separate terminals, run `npm.cmd run dev:api` and `npm.cmd run dev`.
 4. Open `http://localhost:3000/profiler/Overview`. Vite proxies `/api` calls to the backend.
 
-Set at least one of `NANSEN_API_KEY1`, `ETHERSCAN_API_KEY`, or `ARKHAM_API_KEY`. Check `http://127.0.0.1:3001/api/v1/health` to verify Redis connectivity. `npm.cmd run test:api` runs tests with fixtures and does not contact external providers.
+Set at least one of `NANSEN_API_KEY1` or `ETHERSCAN_API_KEY`. Check `http://127.0.0.1:3001/api/v1/health` to verify Redis connectivity. `npm.cmd run test:api` runs tests with fixtures and does not contact external providers.
 
 When `ETHEREUM_RPC_URL` is configured, the API checks `eth_getCode` before cache lookup or provider retrieval. Addresses with deployed bytecode receive `422 SMART_CONTRACT_ADDRESS`; wallet analysis is limited to externally owned accounts. The frontend opens without a default address and starts an analysis only after an address is submitted or supplied explicitly in the URL.
 
@@ -19,9 +19,9 @@ When `ETHEREUM_RPC_URL` is configured, the API checks `eth_getCode` before cache
 
 The provider retrieves every page up to 100,000 transactions or 10,000 records for each balance/counterparty dataset. Transaction history that reaches its ceiling is saved with incomplete coverage; incomplete current-balance retrieval is rejected. Optional enrichment failures are recorded as unavailable and do not suppress the core wallet result. Protocols are attributed only when a returned method or source type identifies them. Unidentified activity remains unattributed. Nansen requests may consume provider credits.
 
-Nansen and Etherscan requests have a 60-second per-attempt timeout and retry one time after transient network or timeout failures. Provider authorization and validation errors are not retried.
+Nansen and Etherscan requests have a 60-second per-attempt timeout and retry one time after transient network or timeout failures. Nansen also retries HTTP 500, 502, 503, and 504 once with the same key. If a Nansen transaction request over more than 30 days still fails with one of those statuses, the backend retries the selected period in non-overlapping 30-day windows under the same 100,000-transaction cap. Provider authorization and validation errors are not retried. If Nansen remains unavailable, another configured provider can still complete the analysis.
 
-The classifier implements the supplied six-profile rules under `classification-v1.0` and `mappings-v10`. Each result has `ASSIGNED`, `NOT_ASSIGNED`, or `NOT_ASSESSED`, a score only when its inputs are verifiable, matched rule IDs, measured variables, and missing inputs. Dormant/New Wallet keeps its score empty and records `new` or `dormant` as the reason. Alchemy receipt verification and provider transaction retrieval support up to 100,000 transactions. Arkham swaps count only when the wallet is the reported sender and the swap hash matches complete verified transaction history.
+The classifier implements the supplied six-profile rules under `classification-v1.0` and `mappings-v10`. Each result has `ASSIGNED`, `NOT_ASSIGNED`, or `NOT_ASSESSED`, a score only when its inputs are verifiable, matched rule IDs, measured variables, and missing inputs. Dormant/New Wallet keeps its score empty and records `new` or `dormant` as the reason. Alchemy receipt verification and provider transaction retrieval support up to 100,000 transactions.
 
 The evidence pipelines use Nansen snapshots to reconstruct 90-day token retention, decoded successful Aave and Uniswap calls for DeFi actions, Etherscan NFT transfers joined to successful OpenSea or Blur transactions with payment, and current Lido positions joined to wallet-initiated deposits and balance history. Missing pages, failed optional endpoints, absent receipt verification, or a period shorter than the rule window leave the affected profile `NOT_ASSESSED`. Unknown contracts and undecoded methods do not receive inferred activity credit.
 

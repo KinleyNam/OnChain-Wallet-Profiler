@@ -2,6 +2,52 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createNansenAnalysis, MAX_NANSEN_TRANSACTIONS, normalizeNansen } from './nansen';
 
+void test('retrieves a 180-day transaction history in non-overlapping windows after an upstream 500', async (t) => {
+  const address = '0x1111111111111111111111111111111111111111';
+  const ranges: Array<{ from: string; to: string }> = [];
+  let fullRangeAttempts = 0;
+  t.mock.method(globalThis, 'fetch', async (input: string, init: RequestInit) => {
+    if (input.endsWith('/transactions')) {
+      const requestBody = init.body;
+      if (typeof requestBody !== 'string') throw new Error('Expected a JSON request body.');
+      const body = JSON.parse(requestBody) as {
+        date: { from: string; to: string };
+        pagination: { page: number };
+      };
+      assert.equal(body.pagination.page, 1);
+      const days = Math.round((Date.parse(body.date.to) - Date.parse(body.date.from)) / 86_400_000) + 1;
+      if (days === 180) {
+        fullRangeAttempts++;
+        return new Response('', { status: 500 });
+      }
+      ranges.push(body.date);
+      return Response.json({
+        data: [{
+          transaction_hash: `0x${ranges.length}`,
+          block_timestamp: `${body.date.from}T12:00:00Z`,
+          method: 'transfer', source_type: 'transfer', volume_usd: 1,
+          tokens_sent: [], tokens_received: [],
+        }],
+        pagination: { is_last_page: true },
+      });
+    }
+    if (input.endsWith('/defi-holdings')) return Response.json({ protocols: [] });
+    if (input.endsWith('/pnl-summary')) return Response.json({});
+    return Response.json({ data: [], pagination: { is_last_page: true } });
+  });
+
+  const record = await createNansenAnalysis(address, 180, 'test-key');
+  assert.equal(fullRangeAttempts, 2);
+  assert.equal(ranges.length, 6);
+  for (let i = 0; i < ranges.length; i++) {
+    const days = Math.round((Date.parse(ranges[i].to) - Date.parse(ranges[i].from)) / 86_400_000) + 1;
+    assert.equal(days, 30);
+    if (i > 0) assert.equal(Date.parse(ranges[i - 1].from) - Date.parse(ranges[i].to), 86_400_000);
+  }
+  assert.equal(record.data.transactions.length, 6);
+  assert.equal(record.data.transactionCoverage?.complete, true);
+});
+
 for (const lastPageComplete of [false, true]) {
   void test(`retains 100,000 transactions with complete=${lastPageComplete} at the page limit`, async (t) => {
     let pages = 0;

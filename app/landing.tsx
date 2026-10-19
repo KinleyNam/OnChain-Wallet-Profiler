@@ -38,7 +38,14 @@ export default function Landing() {
           </a>
           <nav aria-label="Main navigation">
             <a href="#profiles">Wallet profiles</a>
-            <a href="#how-it-works">How it works</a>
+            <button
+              className="nav-disabled"
+              type="button"
+              disabled
+              title="Rules page coming soon"
+            >
+              How it works
+            </button>
             <a className="nav-cta" href="/profiler">
               Open profiler <ArrowUpRight size={15} />
             </a>
@@ -135,9 +142,15 @@ export default function Landing() {
                 <p>Patterns connected. Evidence explained.</p>
               </div>
             </div>
-            <a className="profile-map-link" href="#how-it-works">
-              See how it works <ArrowRight size={15} aria-hidden="true" />
-            </a>
+            <button
+              className="profile-map-link"
+              type="button"
+              disabled
+              title="Rules page coming soon"
+            >
+              Rules page coming soon
+              <ArrowRight size={15} aria-hidden="true" />
+            </button>
           </figure>
         </section>
         <section className="home-capabilities" aria-label="Analysis features">
@@ -250,20 +263,21 @@ export default function Landing() {
                   </li>
                 ))}
               </ol>
-              <a
+              <button
                 className="docs-download"
-                href="/OnChain-Wallet-Profiler-Methodology.pdf"
-                download
+                type="button"
+                disabled
+                title="Analysis PDF coming soon"
               >
                 <span className="docs-download-icon">
                   <FileDown size={19} />
                 </span>
                 <span>
-                  <strong>Download docs</strong>
-                  <small>Methodology and example output · PDF, 3 pages</small>
+                  <strong>Download analysis PDF</strong>
+                  <small>Coming soon</small>
                 </span>
                 <ArrowRight size={17} />
-              </a>
+              </button>
             </div>
           </div>
         </section>

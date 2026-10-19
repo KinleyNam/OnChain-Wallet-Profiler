@@ -597,10 +597,8 @@ export function FundFlows({ data }: { data: WalletData }) {
         </Table>
         <Pager page={currentPage} total={data.flows.length} onChange={setPage} />
         <p className="flow-source">
-          {flowSource === 'arkham-counterparties'
-            ? 'Counterparty totals derived from Arkham transfers in the selected period.'
-            : flowSource === 'nansen-counterparties'
-              ? 'Counterparty totals supplied by Nansen’s dedicated counterparty analysis.'
+          {flowSource === 'nansen-counterparties'
+            ? 'Counterparty totals supplied by Nansen’s dedicated counterparty analysis.'
             : 'Counterparty totals derived from the retrieved token movements.'}
         </p>
       </section>
