@@ -17,7 +17,6 @@ import {
   Activity,
   ArrowRight,
   ArrowUpRight,
-  Blocks,
   Check,
   Copy,
   Download,
@@ -200,7 +199,7 @@ export default function Home() {
           <header className="topbar">
             <div className="topbar-inner">
               <a className="brand" href="/" aria-label="OnChain home">
-                <Blocks size={23} /><span>OnChain</span><span className="brand-divider" /><small>Wallet profiler</small>
+                <Wallet size={23} /><span>OnChain</span><span className="brand-divider" /><small>Wallet profiler</small>
               </a>
             </div>
           </header>
@@ -534,7 +533,7 @@ export default function Home() {
         <header className="topbar">
           <div className="topbar-inner">
             <a className="brand" href="/" aria-label="OnChain home">
-              <Blocks size={23} />
+              <Wallet size={23} />
               <span>OnChain</span>
               <span className="brand-divider" />
               <small>Wallet profiler</small>
@@ -1018,9 +1017,10 @@ export default function Home() {
           </Tabs>
           <footer className="footer">
             <span>
-              <Blocks size={14} /> OnChain Wallet Profiler
+              <Wallet size={14} /> OnChain Wallet Profiler
             </span>
             <span>Ethereum wallet analytics</span>
+            <span>© {new Date().getFullYear()} OnChain Wallet Profiler</span>
           </footer>
         </div>
       </main>

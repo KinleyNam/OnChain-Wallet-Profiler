@@ -30,7 +30,6 @@ The six classification decisions follow `classification-v1.0` in [server/classif
 
 ```powershell
 npm.cmd run build
-npm.cmd run test:api
 ```
 
 The backend routes, limitations, and deployment variables are documented in [server/README.md](server/README.md). For deployment, host the persistent API separately from the Vite frontend and set `VITE_API_BASE_URL` to its public HTTPS origin. Keep Redis and provider credentials only in the backend environment.

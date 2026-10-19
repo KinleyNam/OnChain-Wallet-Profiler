@@ -377,6 +377,10 @@
   font-size: 11px;
   color: var(--text-muted);
 }
+.landing-footer .footer-copyright {
+  color: var(--text-muted);
+  font-size: 11px;
+}
 .landing-footer > a:last-child {
   display: flex;
   align-items: center;
@@ -496,6 +500,10 @@
   }
   .landing-footer > p {
     display: none;
+  }
+  .landing-footer .footer-copyright {
+    flex-basis: 100%;
+    order: 3;
   }
 }
 @media (max-width: 480px) {

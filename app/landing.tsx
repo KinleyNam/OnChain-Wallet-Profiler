@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   ArrowRight,
   ArrowUpRight,
-  Blocks,
+  Wallet,
   Search,
   Activity,
   Layers,
@@ -33,7 +33,7 @@ export default function Landing() {
       <header className="landing-header">
         <div className="landing-wrap landing-nav">
           <a href="/" className="brand" aria-label="OnChain home">
-            <Blocks size={25} />
+            <Wallet size={25} />
             <span>OnChain</span>
           </a>
           <nav aria-label="Main navigation">
@@ -284,10 +284,11 @@ export default function Landing() {
       </main>
       <footer className="landing-wrap landing-footer">
         <a href="/" className="brand">
-          <Blocks size={20} />
+          <Wallet size={20} />
           <span>OnChain</span>
         </a>
         <p>Ethereum wallet analytics</p>
+        <small className="footer-copyright">© {new Date().getFullYear()} OnChain Wallet Profiler</small>
         <a href="/profiler">
           Open profiler <ArrowUpRight size={14} />
         </a>

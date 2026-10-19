@@ -9,7 +9,7 @@ The backend serves Ethereum wallet analyses at `/api/v1` on port 3001. Nansen an
 3. In separate terminals, run `npm.cmd run dev:api` and `npm.cmd run dev`.
 4. Open `http://localhost:3000/profiler/Overview`. Vite proxies `/api` calls to the backend.
 
-Set at least one of `NANSEN_API_KEY1` or `ETHERSCAN_API_KEY`. Check `http://127.0.0.1:3001/api/v1/health` to verify Redis connectivity. `npm.cmd run test:api` runs tests with fixtures and does not contact external providers.
+Set at least one of `NANSEN_API_KEY1` or `ETHERSCAN_API_KEY`. Check `http://127.0.0.1:3001/api/v1/health` to verify Redis connectivity.
 
 When `ETHEREUM_RPC_URL` is configured, the API checks `eth_getCode` before cache lookup or provider retrieval. Addresses with deployed bytecode receive `422 SMART_CONTRACT_ADDRESS`; wallet analysis is limited to externally owned accounts. The frontend opens without a default address and starts an analysis only after an address is submitted or supplied explicitly in the URL.
 
