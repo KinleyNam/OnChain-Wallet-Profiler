@@ -24,7 +24,9 @@ import {
 
 const API = 'https://api.etherscan.io/v2/api';
 const DAY = 86_400_000;
-const PAGE_SIZE = 10_000;
+// Etherscan's free tier returns at most 1,000 rows, even when a larger
+// offset is requested. A larger offset made the first page look complete.
+const PAGE_SIZE = 1_000;
 const MAX_PAGES = 10;
 const REQUEST_TIMEOUT_MS = 60_000;
 const TRANSIENT_ATTEMPTS = 2;
@@ -144,7 +146,7 @@ async function query<T>(key: string, action: string, params: Record<string, stri
   return body.result;
 }
 
-async function allPages<T extends { hash: string }>(
+async function allPages<T extends { hash: string; timeStamp: string }>(
   key: string,
   action: string,
   address: string,
@@ -157,12 +159,24 @@ async function allPages<T extends { hash: string }>(
       endblock: '99999999',
       page: String(page),
       offset: String(PAGE_SIZE),
-      sort: 'asc',
+      sort: 'desc',
     });
     rows.push(...current);
     if (current.length < PAGE_SIZE) return { rows, complete: true };
   }
   return { rows, complete: false };
+}
+
+function coversWindow(
+  result: { rows: Array<{ timeStamp: string }>; complete: boolean } | undefined,
+  cutoff: string,
+  days: number,
+) {
+  if (!result) return false;
+  if (result.complete) return true;
+  const oldest = result.rows.at(-1);
+  const time = oldest ? Date.parse(timestamp(oldest.timeStamp)) : NaN;
+  return Number.isFinite(time) && time < Date.parse(cutoff) - days * DAY;
 }
 
 async function optional<T>(name: string, task: Promise<T>) {
@@ -320,19 +334,12 @@ export async function createEtherscanAnalysis(
 ): Promise<AnalysisRecord> {
   const normalized = address.toLowerCase();
   const asOf = new Date().toISOString();
-  const normal = await allPages<NormalTransaction>(key, 'txlist', normalized);
-  const tokens = await optional(
-    'ERC-20 transfers',
-    allPages<TokenTransfer>(key, 'tokentx', normalized),
-  );
-  const nft721 = await optional(
-    'ERC-721 transfers',
-    allPages<NftTransfer>(key, 'tokennfttx', normalized),
-  );
-  const nft1155 = await optional(
-    'ERC-1155 transfers',
-    allPages<NftTransfer>(key, 'token1155tx', normalized),
-  );
+  const [normal, tokens, nft721, nft1155] = await Promise.all([
+    allPages<NormalTransaction>(key, 'txlist', normalized),
+    optional('ERC-20 transfers', allPages<TokenTransfer>(key, 'tokentx', normalized)),
+    optional('ERC-721 transfers', allPages<NftTransfer>(key, 'tokennfttx', normalized)),
+    optional('ERC-1155 transfers', allPages<NftTransfer>(key, 'token1155tx', normalized)),
+  ]);
   const data = buildWalletData(normalized, periodDays, asOf, normal.rows, tokens?.rows ?? []);
   data.transactionCoverage = {
     complete: normal.complete,
@@ -391,19 +398,22 @@ export async function createEtherscanAnalysis(
     transactions: pipelineTransactions,
     nftTransfers,
   });
-  const completeTransactions = normal.complete;
-  const completeNftHistory = completeTransactions && tokens?.complete === true &&
-    nft721?.complete === true && nft1155?.complete === true;
+  const transactions30d = coversWindow(normal, asOf, 30);
+  const transactions90d = coversWindow(normal, asOf, 90);
+  const nftTrades30d = transactions30d &&
+    coversWindow(tokens, asOf, 30) &&
+    coversWindow(nft721, asOf, 30) &&
+    coversWindow(nft1155, asOf, 30);
   const profiles = classify(buildClassificationEvidence({
     address: normalized,
     cutoff: asOf,
     coverage: {
-      transactions30d: normal.complete,
-      transactions90d: normal.complete,
+      transactions30d,
+      transactions90d,
       lifetimeTransactions: normal.complete,
       dexTrades30d: false,
-      defiActions30d: periodDays >= 30 && completeTransactions,
-      nftTrades30d: periodDays >= 30 && completeNftHistory,
+      defiActions30d: periodDays >= 30 && transactions30d,
+      nftTrades30d: periodDays >= 30 && nftTrades30d,
       holdingHistory90d: false,
       stakingPositionsAndDeposits: false,
     },

@@ -1,4 +1,4 @@
-import { NansenClient, type NansenCredentials } from './nansen-client';
+import { NansenClient, NansenRequestError, type NansenCredentials } from './nansen-client';
 import {
   analysisIdFor,
   ANALYSIS_TTL_SECONDS,
@@ -170,6 +170,68 @@ async function allPages<T>(
   throw new Error(
     `Nansen ${endpoint} exceeded the ${maxPages * perPage}-record retrieval limit; analysis was not saved.`,
   );
+}
+
+async function transactionPages(
+  key: NansenClient,
+  address: string,
+  from: string,
+  to: string,
+  onLimit: () => void,
+): Promise<NansenTransaction[]> {
+  const { perPage, maxPages } = PAGINATION.transactions;
+  const body = { address, chain: 'ethereum', hide_spam_token: true };
+  const fetchRange = async (
+    rangeFrom: string,
+    rangeTo: string,
+    budget: { pages: number },
+  ) => {
+    const rows: NansenTransaction[] = [];
+    for (let page = 1; budget.pages < maxPages; page++) {
+      const response = await request<NansenTransaction>(key, 'transactions', {
+        ...body,
+        date: { from: rangeFrom, to: rangeTo },
+        pagination: { page, per_page: perPage },
+      });
+      budget.pages++;
+      rows.push(...response.data);
+      if (response.pagination?.is_last_page === true ||
+        (response.pagination?.is_last_page === undefined && response.data.length < perPage)) {
+        return { rows, complete: true };
+      }
+    }
+    return { rows, complete: false };
+  };
+
+  try {
+    const result = await fetchRange(from, to, { pages: 0 });
+    if (!result.complete) onLimit();
+    return result.rows;
+  } catch (error) {
+    const days = Math.round((Date.parse(to) - Date.parse(from)) / DAY) + 1;
+    if (!(error instanceof NansenRequestError) ||
+      ![500, 502, 503, 504].includes(error.status) || days <= 30) throw error;
+    // Some large date-window requests fail upstream. Retry non-overlapping
+    // 30-day windows only after the full request has failed, keeping one cap.
+    console.warn(`Nansen transactions ${days}-day request failed (${error.status}); retrying in 30-day windows.`);
+  }
+
+  const rows: NansenTransaction[] = [];
+  const budget = { pages: 0 };
+  const firstDay = Date.parse(`${from}T00:00:00Z`);
+  let lastDay = Date.parse(`${to}T00:00:00Z`);
+  while (lastDay >= firstDay) {
+    const startDay = Math.max(firstDay, lastDay - 29 * DAY);
+    const date = (day: number) => new Date(day).toISOString().slice(0, 10);
+    const result = await fetchRange(date(startDay), date(lastDay), budget);
+    rows.push(...result.rows);
+    if (!result.complete || budget.pages === maxPages) {
+      if (!result.complete || startDay > firstDay) onLimit();
+      break;
+    }
+    lastDay = startDay - DAY;
+  }
+  return rows;
 }
 
 async function allDexPages(
@@ -501,12 +563,7 @@ export async function createNansenAnalysis(
       chain: 'ethereum',
       hide_spam_token: true,
     }),
-    allPages<NansenTransaction>(key, 'transactions', {
-      address: normalized,
-      chain: 'ethereum',
-      date: { from, to },
-      hide_spam_token: true,
-    }, () => { transactionsComplete = false; }),
+    transactionPages(key, normalized, from, to, () => { transactionsComplete = false; }),
   ]);
   const [historicalBalances, counterparties, pnlSummary, defiHoldings, dexTrades, receipts] =
     await Promise.all([

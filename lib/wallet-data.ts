@@ -88,7 +88,7 @@ export type WalletData = {
     interactionCount?: number;
     incoming: number;
     outgoing: number;
-    source?: 'transactions' | 'nansen-counterparties' | 'arkham-counterparties';
+    source?: 'transactions' | 'nansen-counterparties';
   }>;
   historicalBalances: HistoricalBalance[];
   tradePerformance: TradePerformance | null;

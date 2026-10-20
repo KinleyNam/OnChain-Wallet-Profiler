@@ -214,6 +214,7 @@ export function buildClassificationEvidence(
         }
       : undefined,
     dormantOrNew: {
+      oldestObservedInitiatedAt: lifetime[0]?.timestamp ?? null,
       ...(input.coverage.lifetimeTransactions
         ? {
             firstActivityKnown: true,

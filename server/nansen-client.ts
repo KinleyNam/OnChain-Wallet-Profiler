@@ -2,6 +2,13 @@ export type NansenCredentials = string | readonly string[] | NansenClient;
 
 const REQUEST_TIMEOUT_MS = 60_000;
 const TRANSIENT_ATTEMPTS = 2;
+const RETRYABLE_STATUS = new Set([500, 502, 503, 504]);
+
+export class NansenRequestError extends Error {
+  constructor(endpoint: string, readonly status: number) {
+    super(`Nansen ${endpoint} request failed (${status}).`);
+  }
+}
 
 const wait = (milliseconds: number) =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -21,12 +28,18 @@ async function post(
   let lastError: unknown;
   for (let attempt = 0; attempt < TRANSIENT_ATTEMPTS; attempt++) {
     try {
-      return await fetch(url, {
+      const response = await fetch(url, {
         method: 'POST',
         headers: { 'content-type': 'application/json', apikey: key },
         body: JSON.stringify(payload),
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
+      if (RETRYABLE_STATUS.has(response.status) && attempt + 1 < TRANSIENT_ATTEMPTS) {
+        await response.body?.cancel();
+        await wait(500 * 2 ** attempt);
+        continue;
+      }
+      return response;
     } catch (error) {
       lastError = error;
       if (!transientNetworkError(error) || attempt + 1 === TRANSIENT_ATTEMPTS)
@@ -70,7 +83,7 @@ export class NansenClient {
       const creditError = response.status === 402 ||
         ([400, 403, 429].includes(response.status) &&
           /(?:insufficient|exhausted|depleted|no remaining|not enough|out of)\s+(?:\w+\s+){0,3}credits?|credits?\s+(?:\w+\s+){0,3}(?:exhausted|depleted|exceeded|finished|insufficient)/.test(body));
-      if (!creditError) throw new Error(`Nansen ${endpoint} request failed (${response.status}).`);
+      if (!creditError) throw new NansenRequestError(endpoint, response.status);
       // Recheck topped-up keys after five minutes; concurrent calls share this state.
       this.exhausted.set(key, Date.now() + 5 * 60_000);
       if (this.active === index) this.active = (index + 1) % this.keys.length;

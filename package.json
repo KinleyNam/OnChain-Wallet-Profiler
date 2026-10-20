@@ -12,8 +12,7 @@
     "lint": "oxlint",
     "format": "oxfmt",
     "dev:api": "tsx watch server/index.ts",
-    "start:api": "tsx server/index.ts",
-    "test:api": "tsx --test server/*.test.ts"
+    "start:api": "tsx server/index.ts"
   },
   "dependencies": {
     "@base-ui/react": "1.7.0",
