@@ -373,6 +373,10 @@
 .landing-footer .brand > span:first-of-type {
   font-size: 17px;
 }
+.landing-footer .brand-logo {
+  width: 28px;
+  height: 28px;
+}
 .landing-footer > p {
   font-size: 11px;
   color: var(--text-muted);

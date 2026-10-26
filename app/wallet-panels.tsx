@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ArrowDownLeft,
   ArrowUpRight,
   ChevronLeft,
   ChevronRight,
+  Copy,
 } from 'lucide-react';
 import {
   Table,
@@ -15,6 +16,7 @@ import {
 } from '@/components/ui/table';
 import {
   quantity,
+  relativeTime,
   shortAddress,
   timestamp,
   usd,
@@ -165,6 +167,11 @@ export function TransactionTable({
   const [type, setType] = useState('all');
   const [page, setPage] = useState(0);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
   const filtered = transactions.filter(
     (t) => type === 'all' || t.type === type,
   );
@@ -172,7 +179,7 @@ export function TransactionTable({
   return (
     <div>
       <div className="ledger-toolbar">
-        <span>{transactions.length.toLocaleString()} transactions · UTC</span>
+        <span>{transactions.length.toLocaleString()} transactions</span>
         <label>
           Action
           <select
@@ -202,7 +209,7 @@ export function TransactionTable({
               'Protocol',
               'Token movements',
               'Value',
-              'Date (UTC)',
+              'Age',
             ].map((h) => (
               <TableHead key={h}>{h}</TableHead>
             ))}
@@ -214,6 +221,7 @@ export function TransactionTable({
               key={t.hash}
               transaction={t}
               expanded={expanded === t.hash}
+              now={now}
               onExpand={() => setExpanded(expanded === t.hash ? null : t.hash)}
               onProtocol={onProtocol}
             />
@@ -241,11 +249,13 @@ export function TransactionTable({
 function TransactionRows({
   transaction: t,
   expanded,
+  now,
   onExpand,
   onProtocol,
 }: {
   transaction: Transaction;
   expanded: boolean;
+  now: number;
   onExpand: () => void;
   onProtocol?: (name: string) => void;
 }) {
@@ -290,10 +300,15 @@ function TransactionRows({
             ))}
           </div>
         </TableCell>
+        <TableCell>{t.valueAvailable === false ? '—' : usd(t.value)}</TableCell>
         <TableCell>
-          {usd(t.value)}
+          <time
+            dateTime={t.timestamp}
+            title={`${new Date(t.timestamp).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'medium', timeZone: 'UTC' })} UTC`}
+          >
+            {relativeTime(t.timestamp, now)}
+          </time>
         </TableCell>
-        <TableCell>{timestamp(t.timestamp)}</TableCell>
       </TableRow>
       {expanded && (
         <TableRow>
@@ -342,17 +357,21 @@ export function MovementPanel({
   const [token, setToken] = useState('all');
   const [direction, setDirection] = useState('all');
   const [page, setPage] = useState(0);
+  const [copiedHash, setCopiedHash] = useState<string | null>(null);
   const filtered = movements.filter(
     (m) =>
       (token === 'all' || m.token === token) &&
       (direction === 'all' || m.direction === direction),
   );
-  const incoming = filtered
-    .filter((m) => m.direction === 'in')
-    .reduce((sum, m) => sum + m.usd, 0);
-  const outgoing = filtered
-    .filter((m) => m.direction === 'out')
-    .reduce((sum, m) => sum + m.usd, 0);
+  async function copyHash(hash: string) {
+    try {
+      await navigator.clipboard.writeText(hash);
+      setCopiedHash(hash);
+      window.setTimeout(() => setCopiedHash((current) => current === hash ? null : current), 1600);
+    } catch {
+      setCopiedHash(null);
+    }
+  }
   return (
     <section className="panel movements-panel">
       <div className="panel-heading">
@@ -362,14 +381,6 @@ export function MovementPanel({
         </div>
       </div>
       <div className="ledger-toolbar">
-        <div className="movement-totals">
-          <span>
-            Incoming <b>{usd(incoming)}</b>
-          </span>
-          <span>
-            Outgoing <b>{usd(outgoing)}</b>
-          </span>
-        </div>
         <div className="ledger-filters">
           <label>
             Asset
@@ -412,7 +423,6 @@ export function MovementPanel({
             {[
               'Direction',
               'Amount',
-              'Value',
               'From',
               'To',
               'Protocol',
@@ -441,7 +451,6 @@ export function MovementPanel({
                   {quantity(m.amount)} {m.token}
                 </b>
               </TableCell>
-              <TableCell>{usd(m.usd)}</TableCell>
               <TableCell>
                 <span title={m.from}>{shortAddress(m.from)}</span>
               </TableCell>
@@ -450,17 +459,24 @@ export function MovementPanel({
               </TableCell>
               <TableCell>{m.protocol}</TableCell>
               <TableCell>
-                <details className="hash-details">
-                  <summary>{shortAddress(m.hash)}</summary>
-                  <code>{m.hash}</code>
-                </details>
+                <span className="hash-copy" title={m.hash}>
+                  <span>{shortAddress(m.hash)}</span>
+                  <button
+                    type="button"
+                    onClick={() => void copyHash(m.hash)}
+                    aria-label={copiedHash === m.hash ? 'Transaction ID copied' : `Copy transaction ID ${m.hash}`}
+                    title={copiedHash === m.hash ? 'Copied' : 'Copy transaction ID'}
+                  >
+                    <Copy size={13} />
+                  </button>
+                </span>
               </TableCell>
               <TableCell>{timestamp(m.timestamp)}</TableCell>
             </TableRow>
           ))}
           {!filtered.length && (
             <TableRow>
-              <TableCell colSpan={8} className="ledger-empty">
+              <TableCell colSpan={7} className="ledger-empty">
                 No token movements match these filters.
               </TableCell>
             </TableRow>
@@ -496,6 +512,8 @@ export function FundFlows({ data }: { data: WalletData }) {
   const outgoing = data.flows.length
     ? data.flows.reduce((sum, flow) => sum + flow.outgoing, 0)
     : data.outgoing;
+  const valuation = flowSource === 'nansen-counterparties' ? 'complete' : data.usdValuation ?? 'complete';
+  const flowValue = (value: number) => valuation === 'unavailable' ? '—' : usd(value);
   return (
     <>
       <section className="panel flow-panel">
@@ -508,21 +526,25 @@ export function FundFlows({ data }: { data: WalletData }) {
         <div className="flow-totals">
           <div>
             <span>Incoming</span>
-            <strong>{usd(incoming)}</strong>
+            <strong>{flowValue(incoming)}</strong>
           </div>
           <div>
             <span>Outgoing</span>
-            <strong>{usd(outgoing)}</strong>
+            <strong>{flowValue(outgoing)}</strong>
           </div>
           <div>
             <span>Net flow</span>
-            <strong>{usd(incoming - outgoing)}</strong>
+            <strong>{flowValue(incoming - outgoing)}</strong>
           </div>
         </div>
         <p className="flow-note">
           Gross token movements valued in USD. Swaps, staking and lending can
           create both incoming and outgoing legs; these values are not profit
           or loss. Select an amount to inspect its underlying transfers.
+          {valuation === 'partial' && ' USD totals include only movements with available prices.'}
+          {valuation === 'unavailable' && ' USD prices are unavailable for these movements.'}
+          {data.movements.some((movement) => movement.usdPriceSource === 'alchemy-daily') &&
+            ' Alchemy daily historical prices make these USD values estimates.'}
         </p>
         <Table className="ledger-table flow-table">
           <caption className="sr-only">
@@ -562,7 +584,7 @@ export function FundFlows({ data }: { data: WalletData }) {
                       )
                     }
                   >
-                    {usd(f.incoming)}
+                    {flowValue(f.incoming)}
                   </button>
                 </TableCell>
                 <TableCell>
@@ -580,10 +602,10 @@ export function FundFlows({ data }: { data: WalletData }) {
                       )
                     }
                   >
-                    {usd(f.outgoing)}
+                    {flowValue(f.outgoing)}
                   </button>
                 </TableCell>
-                <TableCell>{usd(f.incoming + f.outgoing)}</TableCell>
+                <TableCell>{flowValue(f.incoming + f.outgoing)}</TableCell>
               </TableRow>
             ))}
             {!data.flows.length && (

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { usd, type WalletData } from '@/lib/wallet-data';
 import {
   AnalysisApiError,
@@ -6,6 +6,9 @@ import {
   loadWalletAnalysis,
 } from '@/lib/analysis-api';
 import { WalletLoading } from './wallet-loading';
+import { DemoButton } from './demo-button';
+import { createDemoAnalysis, DEMO_ADDRESS } from '@/lib/demo-analysis';
+import { ProfileTransactionProof, TransactionReferences } from './profile-transaction-proof';
 import type { ProfileResult } from '../server/analysis';
 import {
   BalancesPanel,
@@ -64,7 +67,8 @@ function tabFromPath(pathname = window.location.pathname): TabId {
 export default function Home() {
   const initialParams = new URLSearchParams(window.location.search);
   const suppliedAddress = initialParams.get('address')?.trim() ?? '';
-  const initialAddress = /^0x[a-fA-F0-9]{40}$/.test(suppliedAddress)
+  const initialDemoMode = initialParams.get('demo') === 'defi';
+  const initialAddress = initialDemoMode ? DEMO_ADDRESS : /^0x[a-fA-F0-9]{40}$/.test(suppliedAddress)
     ? suppliedAddress
     : '';
   const suppliedPeriod = initialParams.get('period');
@@ -74,6 +78,7 @@ export default function Home() {
   const [input, setInput] = useState(initialAddress),
     [address, setAddress] = useState(initialAddress),
     [period, setPeriod] = useState(initialPeriod),
+    [demoMode, setDemoMode] = useState(initialDemoMode),
     [tab, setTab] = useState<TabId>(() => tabFromPath()),
     [error, setError] = useState(''),
     [ready, setReady] = useState(false),
@@ -92,6 +97,32 @@ export default function Home() {
     [copied, setCopied] = useState(false),
     [selectedProtocol, setSelectedProtocol] = useState<string | null>(null),
     [walletData, setWalletData] = useState<WalletData | null>(null);
+  const transactionByHash = useMemo(
+    () => new Map((walletData?.transactions ?? []).map((transaction) => [transaction.hash.toLowerCase(), transaction])),
+    [walletData],
+  );
+  const activityReferences = useMemo(() => {
+    const result = {
+      activity: { total: 0, references: [] as NonNullable<ProfileResult['relatedTransactions']> },
+      protocols: { total: 0, references: [] as NonNullable<ProfileResult['relatedTransactions']> },
+      counterparties: { total: 0, references: [] as NonNullable<ProfileResult['relatedTransactions']> },
+    };
+    for (const transaction of walletData?.transactions ?? []) {
+      if (!/^0x[a-f0-9]{64}$/i.test(transaction.hash)) continue;
+      const reference = { hash: transaction.hash, timestamp: transaction.timestamp, label: transaction.type };
+      result.activity.total++;
+      if (result.activity.references.length < 10) result.activity.references.push(reference);
+      if (!['Unknown', 'No protocol'].includes(transaction.protocol)) {
+        result.protocols.total++;
+        if (result.protocols.references.length < 10) result.protocols.references.push({ ...reference, label: transaction.protocol });
+      }
+      if (transaction.fromAddress || transaction.toAddress || transaction.movements.length) {
+        result.counterparties.total++;
+        if (result.counterparties.references.length < 10) result.counterparties.references.push({ ...reference, label: 'Counterparty interaction' });
+      }
+    }
+    return result;
+  }, [walletData]);
   function updateRoute(nextTab: TabId, mode: 'push' | 'replace' = 'push') {
     const nextUrl = new URL(window.location.href);
     nextUrl.pathname = `/profiler/${tabRoutes[nextTab]}`;
@@ -118,13 +149,16 @@ export default function Home() {
     }
     function restoreRoute() {
       const params = new URLSearchParams(window.location.search);
+      const restoredDemoMode = params.get('demo') === 'defi';
       const restoredAddress = params.get('address')?.trim() ?? '';
       const restoredPeriod = params.get('period');
       setTab(tabFromPath());
-      if (/^0x[a-fA-F0-9]{40}$/.test(restoredAddress)) {
-        if (restoredAddress !== address) setReady(false);
-        setAddress(restoredAddress);
-        setInput(restoredAddress);
+      setDemoMode(restoredDemoMode);
+      const nextAddress = restoredDemoMode ? DEMO_ADDRESS : restoredAddress;
+      if (/^0x[a-fA-F0-9]{40}$/.test(nextAddress)) {
+        if (nextAddress !== address || restoredDemoMode !== demoMode) setReady(false);
+        setAddress(nextAddress);
+        setInput(nextAddress);
       } else {
         setAddress('');
         setInput('');
@@ -141,9 +175,25 @@ export default function Home() {
     }
     window.addEventListener('popstate', restoreRoute);
     return () => window.removeEventListener('popstate', restoreRoute);
-  }, [initialAddress, initialPeriod, address, period]);
+  }, [initialAddress, initialPeriod, address, period, demoMode]);
   useEffect(() => {
     if (!address) return;
+    if (demoMode) {
+      const timeout = window.setTimeout(() => {
+        const result = createDemoAnalysis(Number(period));
+        setWalletData(result.wallet);
+        setAnalysisId('demo');
+        setServerProfiles(result.profiles);
+        setServerPrimary(result.primaryProfile);
+        setDataSource('Demo dataset');
+        setRuleVersion('classification-v1.0');
+        setMappingVersion('demo-mappings');
+        setProviderCutoff(result.wallet.asOf);
+        setServerIndicators(result.indicators);
+        setReady(true);
+      }, 500);
+      return () => window.clearTimeout(timeout);
+    }
     const controller = new AbortController();
     loadWalletAnalysis(address, Number(period), controller.signal)
       .then((result) => {
@@ -154,7 +204,7 @@ export default function Home() {
         setServerPrimary(result.profiles.primaryProfile);
         setDataSource((result.analysis.sources ?? [result.analysis.source]).map((source) =>
           source === 'nansen' ? 'Nansen API' : source === 'etherscan' ? 'Etherscan API' :
-            'Alchemy (receipt verification)',
+            'Alchemy API',
         ).join(' + '));
         setRuleVersion(result.analysis.ruleVersion);
         setMappingVersion(result.analysis.mappingVersion);
@@ -168,7 +218,7 @@ export default function Home() {
         setServiceErrorCode(cause instanceof AnalysisApiError ? cause.code ?? '' : '');
       });
     return () => controller.abort();
-  }, [address, period, retry]);
+  }, [address, period, retry, demoMode]);
   function analyze(value = input) {
     const nextAddress = value.trim();
     if (!/^0x[a-fA-F0-9]{40}$/.test(nextAddress)) {
@@ -178,6 +228,7 @@ export default function Home() {
       return;
     }
     setError('');
+    setDemoMode(false);
     setServiceError('');
     setServiceErrorCode('');
     setReady(false);
@@ -187,6 +238,7 @@ export default function Home() {
     const nextUrl = new URL(window.location.href);
     nextUrl.pathname = `/profiler/${tabRoutes.overview}`;
     nextUrl.searchParams.set('address', nextAddress);
+    nextUrl.searchParams.delete('demo');
     nextUrl.searchParams.set('period', period);
     window.history.replaceState({}, '', nextUrl);
     setTab('overview');
@@ -198,9 +250,15 @@ export default function Home() {
         <main className="workspace">
           <header className="topbar">
             <div className="topbar-inner">
-              <a className="brand" href="/" aria-label="OnChain home">
-                <Wallet size={23} /><span>OnChain</span><span className="brand-divider" /><small>Wallet profiler</small>
-              </a>
+              <div className="brand-group">
+                <a className="brand" href="/" aria-label="OnChain home">
+                  <img className="brand-logo" src="/brand-logo.png" alt="" />
+                  <span>OnChain</span>
+                  <span className="brand-divider" />
+                  <small>Wallet profiler</small>
+                </a>
+                <DemoButton />
+              </div>
             </div>
           </header>
           <div className="page">
@@ -208,15 +266,23 @@ export default function Home() {
             <form className="search-form" onSubmit={(event) => { event.preventDefault(); analyze(); }}>
               <Search size={20} />
               <input aria-label="Ethereum wallet address" value={input} onChange={(event) => setInput(event.target.value)} placeholder="Enter an Ethereum wallet address (0x…)" spellCheck={false} />
-              <select aria-label="Analysis period" className="period-select" value={period} onChange={(event) => {
-                setPeriod(event.target.value);
+              <Select value={period} onValueChange={(value) => {
+                if (!value || value === period) return;
+                setPeriod(value);
                 setServiceError('');
                 const nextUrl = new URL(window.location.href);
-                nextUrl.searchParams.set('period', event.target.value);
+                nextUrl.searchParams.set('period', value);
                 window.history.replaceState({}, '', nextUrl);
               }}>
-                {['30', '90', '180'].map((value) => <option key={value} value={value}>Last {value} days</option>)}
-              </select>
+                <SelectTrigger aria-label="Analysis period" className="period-select">
+                  <SelectValue>{`Last ${period} days`}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {['30', '90', '180'].map((value) => (
+                    <SelectItem key={value} value={value}>Last {value} days</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <button className="primary" type="submit">Analyze wallet <ArrowRight size={17} /></button>
             </form>
             {error && <p className="error" role="alert">{error}</p>}
@@ -302,7 +368,9 @@ export default function Home() {
   }));
   async function exportCard() {
     try {
-      const blob = await downloadWalletExport(analysisId);
+      const blob = demoMode
+        ? new Blob([JSON.stringify({ demo: true, wallet: walletData, profiles: profileResults }, null, 2)], { type: 'application/json' })
+        : await downloadWalletExport(analysisId);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -318,7 +386,7 @@ export default function Home() {
       <div className="panel-heading">
         <div>
           <h2>Protocols used</h2>
-          <p>Select a protocol to inspect its transactions</p>
+          <p>Named transactions in the last {days} days. Select a protocol to inspect them.</p>
         </div>
       </div>
       {namedProtocols.length ? (
@@ -332,11 +400,7 @@ export default function Home() {
             ))}
           </div>
           {namedProtocols.map((p) => (
-          <button
-            className="protocol-row"
-            key={p.name}
-            onClick={() => setSelectedProtocol(p.name)}
-          >
+            <button className="protocol-row" key={p.name} onClick={() => setSelectedProtocol(p.name)}>
             <span
               className="protocol-icon"
               style={{ color: p.color, background: p.color + '18' }}
@@ -348,17 +412,17 @@ export default function Home() {
               <small>{p.type}</small>
             </span>
             <span>
-              <b>{p.share}%</b>
+              <b>{p.share.toFixed(1)}%</b>
               <small>{p.count.toLocaleString()} transactions</small>
             </span>
             <ArrowUpRight size={14} />
-          </button>
+            </button>
           ))}
         </>
       ) : (
         <div className="protocol-empty">
-          <b>No named protocol interactions detected</b>
-          <p>The activity in this period does not match a supported protocol.</p>
+          <b>No named protocol transactions detected</b>
+          <p>The transactions in this period do not identify a protocol.</p>
         </div>
       )}
       {(directTransfers || unattributed) && (
@@ -462,30 +526,39 @@ export default function Home() {
         </div>
       </div>
       {[
-        [
-          'Transaction activity',
-          `${count} transactions across ${active} active days`,
-          'Observed',
-        ],
-        [
-          'Protocol coverage',
-          `${protocols
-            .filter((p) => !['Unknown', 'No protocol'].includes(p.name))
-            .reduce((sum, p) => sum + p.share, 0)
-            .toFixed(1)}% attributed to identified protocols`,
-          'Attributed',
-        ],
-        [
-          'Counterparties',
-          `${walletData.counterparties} distinct counterparties across the selected period`,
-          'Observed',
-        ],
-      ].map(([title, desc, confidence]) => (
+        {
+          title: 'Transaction activity',
+          desc: `${count} transactions across ${active} active days`,
+          confidence: 'Observed',
+          proof: activityReferences.activity,
+          context: 'Examples from the loaded transaction ledger. The activity count uses all records in the selected period.',
+        },
+        {
+          title: 'Protocol coverage',
+          desc: `${identifiedProtocolShare.toFixed(1)}% attributed to identified protocols`,
+          confidence: 'Attributed',
+          proof: activityReferences.protocols,
+          context: 'Examples with a named protocol in the loaded ledger. Attribution depends on the current protocol mappings.',
+        },
+        {
+          title: 'Counterparties',
+          desc: `${walletData.counterparties} distinct counterparties across the selected period`,
+          confidence: 'Observed',
+          proof: activityReferences.counterparties,
+          context: 'Examples with an address or token-transfer counterparty. Dedicated counterparty statistics may include records outside this loaded ledger.',
+        },
+      ].map(({ title, desc, confidence, proof, context }) => (
         <div className="evidence-row" key={title}>
-          <Check size={16} />
           <div>
             <b>{title}</b>
             <p>{desc}</p>
+            <TransactionReferences
+              references={proof.references}
+              total={proof.total}
+              transactionByHash={transactionByHash}
+              context={context}
+              emptyText="No transaction hash is available for this indicator."
+            />
           </div>
           <span>{confidence}</span>
         </div>
@@ -494,7 +567,7 @@ export default function Home() {
         <Info size={16} />
         <div>
           Analysis ends {endDate}.{' '}
-          {protocols.find((p) => p.name === 'Unknown')!.share}% of transactions
+          {(unattributed?.share ?? 0).toFixed(1)}% of transactions
           are unattributed. Unattributed transactions are excluded from named
           protocol totals.
         </div>
@@ -511,8 +584,9 @@ export default function Home() {
     {
       icon: ArrowUpRight,
       title: 'Transfer volume',
-      value: usd(displayedTransferVolume),
-      desc: 'Gross incoming + outgoing value',
+      value: walletData.usdValuation === 'unavailable' ? '—' : usd(displayedTransferVolume),
+      desc: walletData.usdValuation === 'partial' ? 'Priced transfers only · partial value' :
+        walletData.usdValuation === 'unavailable' ? 'USD prices unavailable' : 'Gross incoming + outgoing value',
     },
     {
       icon: Wallet,
@@ -532,12 +606,15 @@ export default function Home() {
       <main className="workspace">
         <header className="topbar">
           <div className="topbar-inner">
-            <a className="brand" href="/" aria-label="OnChain home">
-              <Wallet size={23} />
-              <span>OnChain</span>
-              <span className="brand-divider" />
-              <small>Wallet profiler</small>
-            </a>
+            <div className="brand-group">
+              <a className="brand" href="/" aria-label="OnChain home">
+                <img className="brand-logo" src="/brand-logo.png" alt="" />
+                <span>OnChain</span>
+                <span className="brand-divider" />
+                <small>Wallet profiler</small>
+              </a>
+              <DemoButton />
+            </div>
           </div>
         </header>
         <div className="page">
@@ -723,11 +800,7 @@ export default function Home() {
                 <dt>Protocols used</dt>
                 <dd>
                   {
-                    protocols.filter(
-                      (protocol) =>
-                        !['Unknown', 'No protocol'].includes(protocol.name) &&
-                        protocol.share > 0,
-                    ).length
+                    namedProtocols.length
                   }
                   <span>protocols</span>
                 </dd>
@@ -873,32 +946,16 @@ export default function Home() {
                       </div>
                     )) : (
                     <div className="protocol-empty compact">
-                      <b>No protocol usage to compare</b>
+                      <b>No named transactions to compare</b>
                       <p>Only direct or unattributed activity was found.</p>
                     </div>
                   )}
                   <div className="provenance">
-                    <Info size={18} /> Direct transfers are wallet activity, not
-                    protocol usage. Unknown interactions stay unattributed.
+                    <Info size={18} /> Nansen-labeled transactions shown here do not add credit to the profile rules.
+                    Direct transfers and unknown interactions remain separate.
                   </div>
                 </section>
               </div>
-              <section className="panel defi-positions">
-                <div className="panel-heading">
-                  <div><h2>Current DeFi positions</h2><p>Active Ethereum positions reported by Nansen</p></div>
-                </div>
-                {walletData.defiPositions.length ? (
-                  <div className="defi-position-list">
-                    {walletData.defiPositions.map((position) => (
-                      <div key={`${position.chain}-${position.protocol}`}>
-                        <div><b>{position.protocol}</b><span>{position.positionTypes.join(', ') || 'Position'}</span></div>
-                        <strong>{usd(position.totalValue)}</strong>
-                        <small>Assets {usd(position.totalAssets)} · Debts {usd(position.totalDebts)} · Rewards {usd(position.totalRewards)}</small>
-                      </div>
-                    ))}
-                  </div>
-                ) : <p className="detail-copy">{walletData.enrichmentCoverage.defiPositions ? 'No active Ethereum DeFi positions were returned.' : 'DeFi position data is unavailable for this analysis.'}</p>}
-              </section>
             </TabsContent>
             <TabsContent value="risk">
               <section className="panel risk-panel">
@@ -945,7 +1002,7 @@ export default function Home() {
                 <div className="panel-heading">
                   <div>
                     <h2>Profile rule results</h2>
-                    <p>Independent decisions under {ruleVersion} · {mappingVersion}</p>
+                    <p>Independent decisions under {ruleVersion} · {mappingVersion}. Expand related transactions beneath each result when available.</p>
                   </div>
                 </div>
                 {profileResults.map((profile) => {
@@ -955,6 +1012,7 @@ export default function Home() {
                         <b>{profile.name}</b>
                         <p>{profile.evidence}</p>
                         {!!profile.matchedRules.length && <p>Matched rules: {profile.matchedRules.map((rule) => `${rule.id} +${rule.points}`).join(', ')}</p>}
+                        <ProfileTransactionProof profile={profile} transactionByHash={transactionByHash} />
                       </div>
                       <span>
                         {profile.status === 'NOT_ASSESSED' ? 'Not enough data' :
@@ -982,7 +1040,6 @@ export default function Home() {
                   <div><dt>Historical balances</dt><dd>{walletData.enrichmentCoverage.historicalBalances ? `${walletData.historicalBalances.length.toLocaleString()} records` : 'Unavailable'}</dd></div>
                   <div><dt>Dedicated counterparties</dt><dd>{walletData.enrichmentCoverage.counterparties ? `${walletData.flows.length.toLocaleString()} returned` : 'Unavailable'}</dd></div>
                   <div><dt>Trade performance</dt><dd>{walletData.enrichmentCoverage.tradePerformance ? 'Available' : 'Unavailable'}</dd></div>
-                  <div><dt>Current DeFi positions</dt><dd>{walletData.enrichmentCoverage.defiPositions ? `${walletData.defiPositions.length.toLocaleString()} returned` : 'Unavailable'}</dd></div>
                   <div><dt>Analysis cutoff</dt><dd>{new Date(asOf).toLocaleString('en-US', { timeZone: 'UTC' })} UTC</dd></div>
                   <div><dt>Provider cutoff</dt><dd>{providerCutoff ? `${new Date(providerCutoff).toLocaleString('en-US', { timeZone: 'UTC' })} UTC` : 'Not reported'}</dd></div>
                 </dl>
@@ -1017,7 +1074,7 @@ export default function Home() {
           </Tabs>
           <footer className="footer">
             <span>
-              <Wallet size={14} /> OnChain Wallet Profiler
+              <img className="footer-logo" src="/brand-logo.png" alt="" /> OnChain Wallet Profiler
             </span>
             <span>Ethereum wallet analytics</span>
             <span>© {new Date().getFullYear()} OnChain Wallet Profiler</span>

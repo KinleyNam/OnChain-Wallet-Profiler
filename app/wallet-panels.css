@@ -104,20 +104,12 @@
   outline: 2px solid var(--accent-text);
   outline-offset: 2px;
 }
-.ledger-filters,
-.movement-totals {
+.ledger-filters {
   display: flex;
   flex-wrap: wrap;
   gap: 16px;
 }
-.movement-totals span {
-  display: flex;
-  gap: 7px;
-}
-.movement-totals b {
-  color: var(--foreground);
-  font-weight: 500;
-}
+.movements-panel .ledger-toolbar { justify-content: flex-end; }
 .ledger-link {
   color: var(--accent-text);
   background: transparent;
@@ -194,27 +186,53 @@
 .transaction-detail small {
   color: var(--text-muted);
 }
-.hash-details summary {
+.hash-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   color: var(--accent-text);
+  white-space: nowrap;
+}
+.hash-copy button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
   cursor: pointer;
+  padding: 3px;
 }
-.hash-details code {
-  display: block;
-  max-width: 230px;
-  padding: 8px 0;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  font-size: 10px;
-}
+.hash-copy button:hover { color: var(--accent-text); }
+.hash-copy button:focus-visible { outline: 2px solid var(--accent-text); border-radius: 3px; }
 .protocol-dialog {
-  width: calc(100vw - 32px) !important;
-  max-width: 1100px !important;
+  width: min(1600px, calc(100vw - 32px)) !important;
+  max-width: none !important;
   max-height: 85vh;
   overflow-y: auto;
   background: var(--surface) !important;
   padding: 28px !important;
   border: 1px solid var(--border);
 }
+.protocol-dialog [data-slot='table-container'] {
+  min-width: 0;
+  overflow-x: visible;
+}
+.protocol-dialog .ledger-table {
+  width: 100%;
+  table-layout: fixed;
+}
+.protocol-dialog .ledger-table th,
+.protocol-dialog .ledger-table td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.protocol-dialog .ledger-table th:nth-child(1) { width: 11%; }
+.protocol-dialog .ledger-table th:nth-child(2) { width: 32%; }
+.protocol-dialog .ledger-table th:nth-child(3) { width: 18%; }
+.protocol-dialog .ledger-table th:nth-child(4) { width: 16%; }
+.protocol-dialog .ledger-table th:nth-child(5) { width: 14%; }
+.protocol-dialog .ledger-table th:nth-child(6) { width: 9%; }
 .protocol-dialog [data-slot='dialog-title'] {
   padding-right: 28px;
   font-size: 21px;

@@ -10,6 +10,16 @@ export const protocolDefinitions = [
   { name: 'Unknown', letter: '?', type: 'Unattributed transfers', color: '#ada5bc' },
 ] as const;
 
+export type ProtocolUsage = {
+  name: string;
+  letter: string;
+  type: string;
+  color: string;
+  count: number;
+  share: number;
+  evidence?: 'supported-mapping' | 'nansen-labeled-contract' | 'nansen-labeled-counterparty';
+};
+
 export type Movement = {
   id: string;
   hash: string;
@@ -17,6 +27,9 @@ export type Movement = {
   token: string;
   amount: number;
   usd: number;
+  usdAvailable?: boolean;
+  usdPriceSource?: 'alchemy-daily';
+  tokenAddress?: string;
   direction: Direction;
   from: string;
   to: string;
@@ -31,6 +44,7 @@ export type Transaction = {
   protocol: string;
   movements: Movement[];
   value: number;
+  valueAvailable?: boolean;
   fromAddress?: string;
   toAddress?: string | null;
   successful?: boolean;
@@ -73,13 +87,14 @@ export type DefiPosition = {
 };
 
 export type WalletData = {
+  usdValuation?: 'complete' | 'partial' | 'unavailable';
   transactionCoverage?: { complete: boolean; limit: number; fetched: number };
   verifiedTransactionCoverage?: boolean;
   transactions: Transaction[];
   movements: Movement[];
   daily: number[];
   holdings: Holding[];
-  protocols: Array<(typeof protocolDefinitions)[number] & { count: number; share: number }>;
+  protocols: ProtocolUsage[];
   incoming: number;
   outgoing: number;
   flows: Array<{
@@ -133,3 +148,15 @@ export const timestamp = (value: string) =>
     minute: '2-digit',
     timeZone: 'UTC',
   });
+
+export const relativeTime = (value: string, now = Date.now()) => {
+  const elapsed = now - Date.parse(value);
+  if (!Number.isFinite(elapsed)) return 'Unknown';
+  if (elapsed < 60_000) return 'Just now';
+  const minutes = Math.floor(elapsed / 60_000);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(elapsed / 3_600_000);
+  if (hours < 24) return `${hours} ${hours === 1 ? 'hr' : 'hrs'} ago`;
+  const days = Math.floor(elapsed / 86_400_000);
+  return `${days} ${days === 1 ? 'day' : 'days'} ago`;
+};

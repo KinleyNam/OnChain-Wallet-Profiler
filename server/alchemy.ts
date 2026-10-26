@@ -83,26 +83,44 @@ export async function fetchVerifiedReceipts(
     );
   }
   const receipts = new Map<string, VerifiedReceipt>();
-  for (let start = 0; start < unique.length; start += RECEIPT_BATCH_SIZE) {
+  batches: for (let start = 0; start < unique.length; start += RECEIPT_BATCH_SIZE) {
     let pending = unique.slice(start, start + RECEIPT_BATCH_SIZE);
     for (let attempt = 0; pending.length && attempt < RECEIPT_RETRY_ATTEMPTS; attempt++) {
       if (attempt > 0) await wait(retryDelayMs * 2 ** (attempt - 1));
-      const response = await fetch(rpcUrl, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(
-          pending.map((hash, index) => ({
-            jsonrpc: '2.0',
-            id: index,
-            method: 'eth_getTransactionReceipt',
-            params: [hash],
-          })),
-        ),
-        signal: AbortSignal.timeout(30_000),
-      });
+      let response: Response;
+      try {
+        response = await fetch(rpcUrl, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(
+            pending.map((hash, index) => ({
+              jsonrpc: '2.0',
+              id: index,
+              method: 'eth_getTransactionReceipt',
+              params: [hash],
+            })),
+          ),
+          signal: AbortSignal.timeout(30_000),
+        });
+      } catch (error) {
+        const transient = error instanceof Error &&
+          /abort|timeout|network|fetch failed|socket|connection/i.test(
+            `${error.name} ${error.message}`,
+          );
+        if (transient && attempt === 0) continue;
+        if (transient && receipts.size) {
+          console.warn(`Ethereum receipt verification stopped after ${receipts.size} verified transactions; the remaining receipts are unavailable.`);
+          break batches;
+        }
+        throw error;
+      }
       if (!response.ok) {
         if (retryableStatus(response.status) && attempt + 1 < RECEIPT_RETRY_ATTEMPTS)
           continue;
+        if (retryableStatus(response.status) && receipts.size) {
+          console.warn(`Ethereum receipt verification stopped after ${receipts.size} verified transactions; the remaining receipts are unavailable.`);
+          break batches;
+        }
         throw new Error(`Ethereum receipt request failed (${response.status}).`);
       }
       const body = (await response.json()) as RpcResponse[];
@@ -132,10 +150,17 @@ export async function fetchVerifiedReceipts(
       pending = retry;
     }
     if (pending.length) {
+      if (receipts.size) {
+        console.warn(`Ethereum receipt verification stopped after ${receipts.size} verified transactions; the remaining receipts are unavailable.`);
+        break;
+      }
       throw new Error(
         `No verified receipt was returned for ${pending[0]} after retrying provider limits.`,
       );
     }
   }
-  return unique.map((hash) => receipts.get(hash)!);
+  return unique.flatMap((hash) => {
+    const receipt = receipts.get(hash);
+    return receipt ? [receipt] : [];
+  });
 }

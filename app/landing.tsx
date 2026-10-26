@@ -2,7 +2,6 @@ import { useState } from 'react';
 import {
   ArrowRight,
   ArrowUpRight,
-  Wallet,
   Search,
   Activity,
   Layers,
@@ -13,6 +12,7 @@ import {
   FileDown,
   MoonStar,
 } from 'lucide-react';
+import { DemoButton } from './demo-button';
 
 export default function Landing() {
   const [address, setAddress] = useState('');
@@ -32,10 +32,13 @@ export default function Landing() {
     <div className="landing">
       <header className="landing-header">
         <div className="landing-wrap landing-nav">
-          <a href="/" className="brand" aria-label="OnChain home">
-            <Wallet size={25} />
-            <span>OnChain</span>
-          </a>
+          <div className="brand-group">
+            <a href="/" className="brand" aria-label="OnChain home">
+              <img className="brand-logo" src="/brand-logo.png" alt="" />
+              <span>OnChain</span>
+            </a>
+            <DemoButton />
+          </div>
           <nav aria-label="Main navigation">
             <a href="#profiles">Wallet profiles</a>
             <button
@@ -284,7 +287,7 @@ export default function Landing() {
       </main>
       <footer className="landing-wrap landing-footer">
         <a href="/" className="brand">
-          <Wallet size={20} />
+          <img className="brand-logo" src="/brand-logo.png" alt="" />
           <span>OnChain</span>
         </a>
         <p>Ethereum wallet analytics</p>

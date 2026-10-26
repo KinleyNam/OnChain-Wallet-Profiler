@@ -209,7 +209,7 @@ export function extractStakingPositions(input: {
   const activePosition = input.positions.some((position) => {
     const source = `${position.protocolId} ${position.positionTypes.join(' ')}`.toLowerCase();
     return position.totalValueUsd > 0 &&
-      (source.includes('lido') || source.includes('staking'));
+      /\blido\b/.test(source);
   });
   const deposits = input.transactions.filter((transaction) => {
     const name = methodName(transaction.method);
@@ -241,6 +241,7 @@ export function extractStakingPositions(input: {
     serviceId: 'lido',
     active: activeBalance || activePosition,
     verifiedDepositAt,
+    verifiedDepositHash: deposits.at(-1)?.hash ?? null,
     continuousSince,
   }];
 }
