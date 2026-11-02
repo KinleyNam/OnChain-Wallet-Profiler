@@ -4,7 +4,8 @@ import {
   type AnalysisRecord,
 } from './analysis';
 import { classify } from './classification';
-import { buildClassificationEvidence } from './classification-evidence';
+import { buildClassificationEvidence, type VerifiedWalletEvidence } from './classification-evidence';
+import { attachProfileTransactions } from './profile-transactions';
 import {
   CLASSIFICATION_RULE_VERSION,
   MAPPING_VERSION,
@@ -29,7 +30,25 @@ const DAY = 86_400_000;
 const PAGE_SIZE = 1_000;
 const MAX_PAGES = 10;
 const REQUEST_TIMEOUT_MS = 60_000;
-const TRANSIENT_ATTEMPTS = 2;
+const TRANSIENT_ATTEMPTS = 3;
+// The free Etherscan key permits three calls per second. Reserve slots across
+// all analyses in this API process, including pagination and retries.
+const REQUEST_SPACING_MS = 400;
+let nextRequestAt = 0;
+
+const wait = (milliseconds: number) =>
+  new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+async function reserveRequestSlot() {
+  const now = Date.now();
+  const start = Math.max(now, nextRequestAt);
+  nextRequestAt = start + REQUEST_SPACING_MS;
+  if (start > now) await wait(start - now);
+}
+
+function rateLimited(detail: string, status?: number) {
+  return status === 429 || /max calls per sec|rate limit|too many requests/i.test(detail);
+}
 
 type EtherscanResponse<T> = {
   status: string;
@@ -116,12 +135,34 @@ async function query<T>(key: string, action: string, params: Record<string, stri
     ...params,
     apikey: key,
   })) url.searchParams.set(name, value);
-  let response: Response | undefined;
   let lastError: unknown;
   for (let attempt = 0; attempt < TRANSIENT_ATTEMPTS; attempt++) {
     try {
-      response = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
-      break;
+      await reserveRequestSlot();
+      const response = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+      if (!response.ok) {
+        const message = `Etherscan ${action} request failed (${response.status}).`;
+        if ((rateLimited(message, response.status) || response.status >= 500) &&
+            attempt + 1 < TRANSIENT_ATTEMPTS) {
+          await response.body?.cancel();
+          await wait(1_000 * 2 ** attempt);
+          continue;
+        }
+        throw new Error(message);
+      }
+      const body = (await response.json()) as EtherscanResponse<T>;
+      if (body.status === '0') {
+        const detail = typeof body.result === 'string' ? body.result : body.message;
+        if (/no transactions found/i.test(detail)) return [];
+        if (rateLimited(detail) && attempt + 1 < TRANSIENT_ATTEMPTS) {
+          await wait(1_000 * 2 ** attempt);
+          continue;
+        }
+        throw new Error(`Etherscan ${action} request failed: ${detail || body.message}.`);
+      }
+      if (!Array.isArray(body.result))
+        throw new Error(`Etherscan ${action} returned an invalid response.`);
+      return body.result;
     } catch (error) {
       lastError = error;
       const transient = error instanceof Error &&
@@ -129,21 +170,10 @@ async function query<T>(key: string, action: string, params: Record<string, stri
           `${error.name} ${error.message}`,
         );
       if (!transient || attempt + 1 === TRANSIENT_ATTEMPTS) throw error;
-      await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
+      await wait(1_000 * 2 ** attempt);
     }
   }
-  if (!response) throw lastError;
-  if (!response.ok)
-    throw new Error(`Etherscan ${action} request failed (${response.status}).`);
-  const body = (await response.json()) as EtherscanResponse<T>;
-  if (body.status === '0') {
-    const detail = typeof body.result === 'string' ? body.result : body.message;
-    if (/no transactions found/i.test(detail)) return [];
-    throw new Error(`Etherscan ${action} request failed: ${detail || body.message}.`);
-  }
-  if (!Array.isArray(body.result))
-    throw new Error(`Etherscan ${action} returned an invalid response.`);
-  return body.result;
+  throw lastError;
 }
 
 async function allPages<T extends { hash: string; timeStamp: string }>(
@@ -214,8 +244,10 @@ function buildWalletData(
       hash: row.hash.toLowerCase(),
       timestamp: time,
       token: row.tokenSymbol || 'Unknown',
+      tokenAddress: row.contractAddress.toLowerCase(),
       amount: amount(row.value, row.tokenDecimal ?? '0'),
       usd: 0,
+      usdAvailable: false,
       direction,
       from,
       to,
@@ -240,7 +272,7 @@ function buildWalletData(
         const direction = to === wallet ? 'in' as const : 'out' as const;
         movements.push({
           id: `${hash}:eth`, hash, timestamp: time, token: 'ETH', amount: native,
-          usd: 0, direction, from, to: to ?? '', protocol,
+          usd: 0, usdAvailable: false, direction, from, to: to ?? '', protocol,
           counterparty: direction === 'in' ? from : to ?? '',
         });
       }
@@ -251,6 +283,7 @@ function buildWalletData(
         protocol,
         movements,
         value: 0,
+        valueAvailable: false,
         fromAddress: from,
         toAddress: to,
         successful: row.isError !== '1' && row.txreceipt_status !== '0',
@@ -270,6 +303,7 @@ function buildWalletData(
       protocol: movements[0].protocol,
       movements,
       value: 0,
+      valueAvailable: false,
     });
   }
   transactions.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
@@ -282,7 +316,7 @@ function buildWalletData(
   const protocols = protocolDefinitions.map((definition) => {
     const count = successful.filter((row) => row.protocol === definition.name).length;
     return { ...definition, count, share: successful.length ? count / successful.length * 100 : 0 };
-  });
+  }).filter((protocol) => protocol.count > 0);
   const incoming = movements.filter((row) => row.direction === 'in').reduce((sum, row) => sum + row.usd, 0);
   const outgoing = movements.filter((row) => row.direction === 'out').reduce((sum, row) => sum + row.usd, 0);
   const flows = new Map<string, { name: string; incoming: number; outgoing: number; source: 'transactions' }>();
@@ -296,6 +330,7 @@ function buildWalletData(
   const oldest = transactions.at(-1)?.timestamp ?? null;
   const newest = transactions[0]?.timestamp ?? null;
   return {
+    usdValuation: 'unavailable',
     transactions,
     movements,
     daily,
@@ -404,7 +439,7 @@ export async function createEtherscanAnalysis(
     coversWindow(tokens, asOf, 30) &&
     coversWindow(nft721, asOf, 30) &&
     coversWindow(nft1155, asOf, 30);
-  const profiles = classify(buildClassificationEvidence({
+  const verifiedEvidence: VerifiedWalletEvidence = {
     address: normalized,
     cutoff: asOf,
     coverage: {
@@ -423,7 +458,11 @@ export async function createEtherscanAnalysis(
     nftTrades,
     holdings: [],
     stakingPositions: [],
-  }));
+  };
+  const profiles = attachProfileTransactions(
+    classify(buildClassificationEvidence(verifiedEvidence)),
+    verifiedEvidence,
+  );
   return {
     analysisId: analysisIdFor(normalized, periodDays),
     address: normalized,

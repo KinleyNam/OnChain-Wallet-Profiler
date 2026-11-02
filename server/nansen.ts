@@ -5,7 +5,8 @@ import {
   type AnalysisRecord,
 } from './analysis';
 import { classify } from './classification';
-import { buildClassificationEvidence } from './classification-evidence';
+import { buildClassificationEvidence, type VerifiedWalletEvidence } from './classification-evidence';
+import { attachProfileTransactions } from './profile-transactions';
 import {
   CLASSIFICATION_RULE_VERSION,
   MAPPING_VERSION,
@@ -13,6 +14,7 @@ import {
 import {
   protocolDefinitions,
   type Movement,
+  type ProtocolUsage,
   type Transaction,
   type WalletData,
 } from '../lib/wallet-data';
@@ -317,6 +319,119 @@ function protocolFor(row: NansenTransaction, receipt?: VerifiedReceipt) {
   return row.source_type?.toLowerCase() === 'transfer' ? 'No protocol' : 'Unknown';
 }
 
+function protocolName(value: string) {
+  const cleaned = value.trim().split(/[:|]/)[0]
+    .replace(/(?:[-_ ]ethereum)$/i, '')
+    .replace(/[-_]/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+  if (!cleaned || cleaned.length > 60 || /^0x[a-f0-9]+$/i.test(cleaned) ||
+      /^(?:unknown|wallet|contract|smart contract|token|exchange|protocol|router|pool|vault|proxy|whale|smart money|high activity)$/i.test(cleaned) ||
+      /^(?:coinbase|binance|kraken|okx|bybit|kucoin|bitfinex)\b/i.test(cleaned) ||
+      /\b(?:deposit address|hot wallet|cold wallet|token millionaire)\b/i.test(cleaned)) return null;
+  const known = namedProtocol(cleaned);
+  if (known) return known;
+  return cleaned.split(' ').map((part) =>
+    part === part.toLowerCase() && /^[a-z]/.test(part)
+      ? part[0].toUpperCase() + part.slice(1)
+      : part).join(' ');
+}
+
+function labelValues(value: string | string[] | undefined) {
+  return (Array.isArray(value) ? value : value ? [value] : []).filter(Boolean);
+}
+
+function protocolLikeLabel(value: string) {
+  return /\b(?:router|pool|vault|protocol|staking|lending|marketplace|swap|seaport|factory)\b/i.test(value) &&
+    !/^(?:coinbase|binance|kraken|okx|bybit|kucoin|bitfinex)\b/i.test(value);
+}
+
+// Display discovery is deliberately separate from VerifiedWalletEvidence. A
+// Nansen label must not become a classification action.
+function expandDisplayedProtocols(
+  data: WalletData,
+  wallet: string,
+  rows: NansenTransaction[],
+  counterparties: NansenCounterparty[] | undefined,
+  receipts: VerifiedReceipt[] | undefined,
+) {
+  const byHash = new Map(rows.map((row) => [row.transaction_hash.toLowerCase(), row]));
+  const receiptByHash = new Map((receipts ?? []).map((receipt) => [receipt.hash.toLowerCase(), receipt]));
+  const labelsByAddress = new Map((counterparties ?? []).map((row) => [
+    row.counterparty_address.toLowerCase(), row.counterparty_address_label ?? [],
+  ]));
+  const discovered = new Map<string, 'nansen-labeled-contract' | 'nansen-labeled-counterparty'>();
+  const canonicalNames = new Map<string, string>();
+  for (const transaction of data.transactions) {
+    if (!['Unknown', 'No protocol'].includes(transaction.protocol)) continue;
+    const receipt = receiptByHash.get(transaction.hash.toLowerCase());
+    const row = byHash.get(transaction.hash.toLowerCase());
+    const target = receipt?.toAddress?.toLowerCase();
+    if (!row) continue;
+    const verifiedCall = target && receipt?.successful &&
+      receipt.fromAddress.toLowerCase() === wallet &&
+      row.method && !/^transfer(?:\(|$)/i.test(row.method.trim());
+    const directLabels = verifiedCall ? [
+      ...(labelsByAddress.get(target) ?? []),
+      ...[...(row.tokens_sent ?? []), ...(row.tokens_received ?? [])]
+        .filter((token) => token.from_address?.toLowerCase() === target ||
+          token.to_address?.toLowerCase() === target)
+        .flatMap((token) => [
+          ...labelValues(token.from_address?.toLowerCase() === target ? token.from_address_label : undefined),
+          ...labelValues(token.to_address?.toLowerCase() === target ? token.to_address_label : undefined),
+        ]),
+    ] : [];
+    const transferLabels = [
+      ...(row.tokens_sent ?? [])
+        .filter((token) => token.from_address?.toLowerCase() === wallet)
+        .flatMap((token) => [
+          ...labelValues(token.to_address_label),
+          ...(labelsByAddress.get(token.to_address?.toLowerCase()) ?? []),
+        ]),
+      ...(row.tokens_received ?? [])
+        .filter((token) => token.to_address?.toLowerCase() === wallet)
+        .flatMap((token) => [
+          ...labelValues(token.from_address_label),
+          ...(labelsByAddress.get(token.from_address?.toLowerCase()) ?? []),
+        ]),
+    ].filter(protocolLikeLabel);
+    const directName = directLabels.map(protocolName)
+      .find((candidate): candidate is string => Boolean(candidate));
+    const name = directName ?? transferLabels.map(protocolName)
+      .find((candidate): candidate is string => Boolean(candidate));
+    if (!name) continue;
+    const canonical = canonicalNames.get(name.toLowerCase()) ?? name;
+    canonicalNames.set(name.toLowerCase(), canonical);
+    transaction.protocol = canonical;
+    for (const movement of transaction.movements) movement.protocol = canonical;
+    discovered.set(canonical, directName ? 'nansen-labeled-contract' : 'nansen-labeled-counterparty');
+  }
+
+  const eligible = data.transactions.filter((transaction) => transaction.successful !== false);
+  const counts = new Map<string, number>();
+  for (const transaction of eligible)
+    counts.set(transaction.protocol, (counts.get(transaction.protocol) ?? 0) + 1);
+  const entries: ProtocolUsage[] = protocolDefinitions.map((definition) => ({
+    ...definition,
+    count: counts.get(definition.name) ?? 0,
+    share: eligible.length ? (counts.get(definition.name) ?? 0) / eligible.length * 100 : 0,
+    evidence: 'supported-mapping',
+  }));
+  for (const [name, count] of counts) {
+    if (entries.some((entry) => entry.name.toLowerCase() === name.toLowerCase())) continue;
+    entries.push({
+      name, letter: name.slice(0, 1).toUpperCase(),
+      type: discovered.get(name) === 'nansen-labeled-contract'
+        ? 'Nansen-labeled contract call' : 'Nansen-labeled transfer counterparty',
+      color: '#9f8ac8',
+      count, share: eligible.length ? count / eligible.length * 100 : 0,
+      evidence: discovered.get(name) ?? 'nansen-labeled-counterparty',
+    });
+  }
+  data.protocols = entries
+    .filter((entry) => entry.count > 0)
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+}
+
 export function normalizeNansen(
   address: string,
   days: number,
@@ -360,8 +475,10 @@ export function normalizeNansen(
           hash: row.transaction_hash,
           timestamp: row.block_timestamp,
           token: token.token_symbol || 'Unknown',
+          tokenAddress: token.token_address,
           amount: number(token.token_amount),
           usd: number(token.value_usd),
+          usdAvailable: number(token.token_amount) === 0 || number(token.value_usd) > 0,
           direction,
           from,
           to,
@@ -750,8 +867,7 @@ export async function createNansenAnalysis(
     historicalBalances !== undefined;
   const verifiedStakingHistory =
     verifiedNinetyDayHistory && defiHoldings !== undefined;
-  const profiles = classify(
-    buildClassificationEvidence({
+  const verifiedEvidence: VerifiedWalletEvidence = {
       address: normalized,
       cutoff: asOf,
       coverage: {
@@ -776,7 +892,10 @@ export async function createNansenAnalysis(
       nftTrades: [],
       holdings: retainedHoldings,
       stakingPositions: verifiedStakingPositions,
-    }),
+    };
+  const profiles = attachProfileTransactions(
+    classify(buildClassificationEvidence(verifiedEvidence)),
+    verifiedEvidence,
   );
   if (partialActivity) {
     for (const profile of profiles) {
@@ -785,6 +904,7 @@ export async function createNansenAnalysis(
       profile.evidence += ' Existing scoring rules applied to fetched, verified activity only; history and ratios may be partial.';
     }
   }
+  expandDisplayedProtocols(data, normalized, transactions, counterparties, receipts);
   return {
     analysisId: analysisIdFor(normalized, periodDays),
     address: normalized,

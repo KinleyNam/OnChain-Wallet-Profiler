@@ -13,6 +13,8 @@ export type ProfileResult = {
   missingInputs: string[];
   matchedRules: Array<{ id: string; points: number }>;
   variables: Record<string, number | string | boolean | null>;
+  relatedTransactions?: Array<{ hash: string; timestamp: string; label: string }>;
+  relatedTransactionCount?: number;
 };
 
 export type RetainedHolding = {

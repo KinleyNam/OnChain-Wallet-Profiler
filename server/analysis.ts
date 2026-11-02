@@ -8,7 +8,7 @@ import {
 export type { ProfileResult } from './classification';
 
 export const ANALYSIS_TTL_SECONDS = 10 * 60;
-const DATA_PIPELINE_VERSION = 'nansen-etherscan-v2';
+const DATA_PIPELINE_VERSION = 'nansen-etherscan-v7-transaction-protocols';
 export const PERIODS = [30, 90, 180] as const;
 export const ETHEREUM_ADDRESS = /^0x[a-fA-F0-9]{40}$/;
 

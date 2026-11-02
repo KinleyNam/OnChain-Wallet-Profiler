@@ -43,6 +43,7 @@ type VerifiedStakingPosition = {
   serviceId: string;
   active: boolean;
   verifiedDepositAt: string | null;
+  verifiedDepositHash?: string | null;
   continuousSince: string | null;
 };
 

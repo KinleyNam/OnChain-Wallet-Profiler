@@ -141,6 +141,13 @@ input:focus-visible {
 .brand > svg {
   color: var(--text-secondary);
 }
+.brand-logo {
+  display: block;
+  width: 35px;
+  height: 35px;
+  flex: none;
+  object-fit: contain;
+}
 .brand > span:first-of-type {
   font-size: 21px;
   font-weight: 600;
@@ -656,6 +663,60 @@ h1 {
   font-size: 11px;
   white-space: nowrap;
 }
+.proof-list {
+  margin-top: 12px;
+  min-width: 0;
+}
+.proof-list > summary,
+.proof-transaction > summary {
+  cursor: pointer;
+  color: var(--accent-text);
+  font-size: 12px;
+}
+.proof-list > summary:hover,
+.proof-transaction > summary:hover {
+  text-decoration: underline;
+}
+.rule-result .proof-context,
+.rule-result .proof-empty {
+  margin-top: 10px;
+  color: var(--text-secondary);
+}
+.proof-list ul {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+.proof-list > ul > li {
+  border-top: 1px solid var(--border);
+  padding: 9px 0;
+}
+.proof-transaction > summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+.proof-transaction > summary span {
+  color: var(--foreground);
+}
+.proof-transaction > summary time {
+  color: var(--text-muted);
+}
+.proof-transaction code {
+  overflow-wrap: anywhere;
+  font-family: var(--font-data);
+  font-size: 11px;
+}
+.proof-transaction-body {
+  padding: 10px 0 5px 14px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.proof-transaction-body ul {
+  list-style: disc;
+  margin: 6px 0 8px 16px;
+}
 .data-provenance dl {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -903,25 +964,25 @@ h1 {
   min-width: 8px;
   height: 15px;
   border-radius: 2px;
-  background: var(--surface-raised);
+  background: var(--heat-0);
 }
 .level-1 {
-  background: var(--accent-soft);
+  background: var(--heat-1);
 }
 .level-2 {
-  background: var(--accent-soft);
+  background: var(--heat-2);
 }
 .level-3 {
-  background: var(--accent-soft);
+  background: var(--heat-3);
 }
 .level-4 {
-  background: var(--accent-soft);
+  background: var(--heat-4);
 }
 .level-5 {
-  background: var(--accent-soft);
+  background: var(--heat-5);
 }
 .heat:hover {
-  outline: 1px solid var(--border-strong);
+  outline: 1px solid var(--heat-5);
   outline-offset: 1px;
 }
 .heat:disabled {
@@ -959,9 +1020,9 @@ h1 {
   border-top: 1px solid var(--border);
   padding: 16px 0;
 }
-.evidence-row > svg {
-  flex: none;
-  color: var(--text-secondary);
+.evidence-row > div {
+  flex: 1;
+  min-width: 0;
 }
 .evidence-row b {
   font-size: 14px;
@@ -1013,22 +1074,6 @@ h1 {
 .trade-performance dl > div:first-child { padding-left: 0; border-left: 0; }
 .trade-performance dt { color: var(--text-muted); font-size: 11px; }
 .trade-performance dd { margin: 8px 0 0; color: var(--foreground); font-size: 22px; font-weight: 550; }
-.defi-positions { margin-top: 20px; }
-.defi-position-list { display: grid; gap: 0; }
-.defi-position-list > div {
-  display: grid;
-  grid-template-columns: minmax(180px, 1fr) auto minmax(280px, 1fr);
-  align-items: center;
-  gap: 18px;
-  padding: 14px 0;
-  border-top: 1px solid var(--border);
-}
-.defi-position-list > div:first-child { border-top: 0; }
-.defi-position-list div > div { display: grid; gap: 4px; }
-.defi-position-list span,
-.defi-position-list small { color: var(--text-muted); font-size: 10px; }
-.defi-position-list strong { font-size: 15px; }
-.defi-position-list small { text-align: right; }
 .detail-copy,
 .methodology p {
   font-size: 15px;
@@ -1106,6 +1151,11 @@ h1 {
   display: flex;
   align-items: center;
   gap: 7px;
+}
+.footer-logo {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
 }
 [data-slot='tabs-content'] > .activity-panel {
   margin-top: 20px;
@@ -1252,8 +1302,6 @@ h1 {
   }
   .trade-performance dl { grid-template-columns: 1fr 1fr; gap: 20px 0; }
   .trade-performance dl > div:nth-child(3) { padding-left: 0; border-left: 0; }
-  .defi-position-list > div { grid-template-columns: 1fr auto; }
-  .defi-position-list small { grid-column: 1 / -1; text-align: left; }
   .stats-grid {
     grid-template-columns: 1fr 1fr;
     gap: 20px 0;

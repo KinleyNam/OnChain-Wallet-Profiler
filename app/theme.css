@@ -21,12 +21,12 @@
   --chart-line: var(--palette-lavender);
   --profile-surface: var(--surface);
   --profile-border: #50495f;
-  --heat-0: #342c2e;
-  --heat-1: #4d1f25;
-  --heat-2: #74262e;
-  --heat-3: #a4323a;
-  --heat-4: #d7444b;
-  --heat-5: #ff686d;
+  --heat-0: #342e3e;
+  --heat-1: #4c3d66;
+  --heat-2: #68518d;
+  --heat-3: #8769b9;
+  --heat-4: #a087dd;
+  --heat-5: #c1a9f4;
   --status-background: #3f3453;
   --status-text: #d0b9f3;
   color-scheme: dark;
@@ -165,6 +165,29 @@ body,
 .hero-copy h1 em,
 .mono {
   color: var(--accent-text);
+}
+.brand-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.demo-trigger {
+  appearance: none;
+  border: 1px solid var(--accent-text);
+  border-radius: 5px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  cursor: pointer;
+  opacity: 0;
+}
+.demo-trigger:hover,
+.demo-trigger:focus-visible {
+  opacity: 1;
 }
 .home-eyebrow > span {
   background: var(--palette-lavender);

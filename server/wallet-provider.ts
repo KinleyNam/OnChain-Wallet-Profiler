@@ -1,6 +1,7 @@
 import type { NansenCredentials } from './nansen-client';
 import type { AnalysisRecord } from './analysis';
 import { createEtherscanAnalysis } from './etherscan';
+import { enrichMovementPrices } from './alchemy-prices';
 import { createNansenAnalysis } from './nansen';
 
 export type ProviderSettings = {
@@ -109,5 +110,6 @@ export async function createWalletAnalysis(
   if (!record)
     throw new Error('All configured wallet data providers are unavailable.');
   if (nansen && etherscan) mergeProfiles(record, etherscan);
+  await enrichMovementPrices(record, settings.ethereumRpcUrl);
   return reconcileWalletAnalysis(record);
 }
