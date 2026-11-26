@@ -1,23 +1,25 @@
-/* Shared palette: ivory, gray, lavender, purple and charcoal. */
+/* Dark ink, warm paper and violet: the palette used throughout the case file. */
 :root {
-  --palette-white: #faf8ff;
-  --palette-gray: #dedde2;
-  --palette-lavender: #9c83ee;
-  --palette-purple: #4f32ef;
-  --palette-charcoal: #252527;
-  --background: #19191c;
+  --palette-white: #f5f0e9;
+  --palette-gray: #d0c9ce;
+  --palette-lavender: #bda9f4;
+  --palette-purple: #694bc8;
+  --palette-charcoal: #252329;
+  --background: #19171b;
   --foreground: var(--palette-white);
   --surface: var(--palette-charcoal);
-  --surface-raised: #2c2b30;
+  --surface-raised: #2d2930;
   --card: var(--surface);
   --text-secondary: var(--palette-gray);
-  --text-muted: #a3a0ac;
-  --border: #38373d;
-  --border-strong: #53505d;
+  --text-muted: #aaa2ad;
+  --border: #403a43;
+  --border-strong: #645967;
   --accent: var(--palette-purple);
-  --accent-hover: #6247f2;
-  --accent-soft: #343041;
+  --accent-hover: #7c5ed9;
+  --accent-soft: #383040;
   --accent-text: var(--palette-lavender);
+  --warm-accent: #e2ad8d;
+  --font-editorial: Georgia, 'Times New Roman', serif;
   --chart-line: var(--palette-lavender);
   --profile-surface: var(--surface);
   --profile-border: #50495f;
@@ -33,19 +35,20 @@
 }
 body,
 .landing,
-.home-capabilities,
-.home-workflow {
+.home-capabilities {
   background: var(--background);
   color: var(--foreground);
 }
-.topbar,
-.landing-header {
+.topbar {
   background: var(--surface);
+  border-color: var(--border);
+}
+.landing-header {
+  background: var(--background);
   border-color: var(--border);
 }
 .panel,
 .stats-grid,
-.profile-types,
 .detail-modal {
   background: var(--surface);
   border-color: var(--border);
@@ -56,7 +59,8 @@ body,
   padding: 28px 30px 0;
   background: var(--profile-surface);
   border-color: var(--profile-border);
-  border-radius: 12px;
+  border-top: 2px solid var(--accent-text);
+  border-radius: 8px;
   box-shadow: 0 8px 24px rgb(0 0 0 / 4%);
 }
 .profile-feature .identity-heading {
@@ -70,7 +74,9 @@ body,
   border-color: var(--border);
 }
 .profile-feature h2 {
-  font-size: clamp(28px, 2.8vw, 36px);
+  font-family: var(--font-editorial);
+  font-size: clamp(32px, 3.3vw, 44px);
+  font-weight: 400;
   letter-spacing: -0.04em;
   line-height: 1.2;
 }
@@ -171,27 +177,6 @@ body,
   align-items: center;
   gap: 12px;
 }
-.demo-trigger {
-  appearance: none;
-  border: 1px solid var(--accent-text);
-  border-radius: 5px;
-  background: var(--accent-soft);
-  color: var(--accent-text);
-  padding: 5px 8px;
-  font: inherit;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: .02em;
-  cursor: pointer;
-  opacity: 0;
-}
-.demo-trigger:hover,
-.demo-trigger:focus-visible {
-  opacity: 1;
-}
-.home-eyebrow > span {
-  background: var(--palette-lavender);
-}
 .primary,
 .home-search-field button,
 .landing-nav .nav-cta {
@@ -284,6 +269,12 @@ input:focus-visible {
 }
 .landing-nav nav {
   gap: 22px;
+}
+.page-title h1 {
+  font-family: var(--font-editorial);
+  font-size: clamp(32px, 3vw, 42px);
+  font-weight: 400;
+  letter-spacing: -.035em;
 }
 ::selection {
   background: var(--palette-lavender);

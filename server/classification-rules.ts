@@ -1,5 +1,5 @@
-export const CLASSIFICATION_RULE_VERSION = 'classification-v1.0';
-export const MAPPING_VERSION = 'mappings-v10';
+export const CLASSIFICATION_RULE_VERSION = 'classification-v1.1';
+export const MAPPING_VERSION = 'mappings-v11';
 
 export const PROFILE_RULES = {
   activeTrader: {
@@ -28,14 +28,6 @@ export const PROFILE_RULES = {
     protocols: 2,
     actionTypes: 2,
     points: { DF1: 40, DF2: 30, DF3: 20, DF4: 10 },
-  },
-  nftTrader: {
-    threshold: 60,
-    minimumTrades: 5,
-    tradeCount: 5,
-    days: 3,
-    collections: 2,
-    points: { NF1: 40, NF2: 30, NF3: 20, NF4: 10 },
   },
   stakingParticipant: {
     threshold: 70,

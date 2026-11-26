@@ -4,8 +4,6 @@ export const protocolDefinitions = [
   { name: 'Uniswap', letter: 'U', type: 'Decentralized exchange', color: '#9c83ee' },
   { name: 'Aave', letter: 'A', type: 'Lending & borrowing', color: '#8e91ba' },
   { name: 'Lido', letter: 'L', type: 'Liquid staking', color: '#b6a3e6' },
-  { name: 'OpenSea', letter: 'O', type: 'Marketplace protocol', color: '#a78cde' },
-  { name: 'Blur', letter: 'B', type: 'Marketplace protocol', color: '#bcaddb' },
   { name: 'No protocol', letter: '—', type: 'Direct wallet transfers', color: '#ada5bc' },
   { name: 'Unknown', letter: '?', type: 'Unattributed transfers', color: '#ada5bc' },
 ] as const;

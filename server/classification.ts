@@ -48,13 +48,6 @@ export type ClassificationEvidence = {
     protocolIds?: string[];
     actionTypes?: string[];
   };
-  nftTrader?: {
-    tradeTransactions?: number;
-    tradingDays?: number;
-    collectionIds?: string[];
-    hasPurchases?: boolean;
-    hasSales?: boolean;
-  };
   stakingParticipant?: {
     hasActivePosition?: boolean;
     hasVerifiedDeposit?: boolean;
@@ -87,10 +80,6 @@ const INPUT_LABELS: Record<string, string> = {
   days: 'qualifying activity dates',
   protocolIds: 'verified protocol IDs',
   actionTypes: 'verified DeFi action types',
-  tradeTransactions: 'verified NFT sale transactions',
-  collectionIds: 'NFT collection contracts',
-  hasPurchases: 'verified NFT buyer roles',
-  hasSales: 'verified NFT seller roles',
   hasActivePosition: 'current staking position',
   hasVerifiedDeposit: 'wallet-attributed staking deposit',
   hasDepositInLast90Days: 'staking deposits in 90 days',
@@ -370,68 +359,6 @@ export function classify(evidence: ClassificationEvidence): ProfileResult[] {
           defi_days: days,
           defi_protocols: protocols,
           defi_action_types: actions,
-        },
-      ),
-    );
-  }
-
-  const nft = evidence.nftTrader ?? {};
-  const nftMissing = missing(nft, [
-    'tradeTransactions',
-    'tradingDays',
-    'collectionIds',
-    'hasPurchases',
-    'hasSales',
-  ]);
-  if (nftMissing.length) {
-    results.push(
-      unassessed('NFT trader', PROFILE_RULES.nftTrader.threshold, nftMissing),
-    );
-  } else {
-    const trades = nft.tradeTransactions!;
-    const days = nft.tradingDays!;
-    const collections = uniqueCount(nft.collectionIds!);
-    const rules = [
-      [
-        'NF1',
-        PROFILE_RULES.nftTrader.points.NF1,
-        trades >= PROFILE_RULES.nftTrader.tradeCount,
-      ],
-      [
-        'NF2',
-        PROFILE_RULES.nftTrader.points.NF2,
-        days >= PROFILE_RULES.nftTrader.days,
-      ],
-      [
-        'NF3',
-        PROFILE_RULES.nftTrader.points.NF3,
-        nft.hasPurchases! && nft.hasSales!,
-      ],
-      [
-        'NF4',
-        PROFILE_RULES.nftTrader.points.NF4,
-        collections >= PROFILE_RULES.nftTrader.collections,
-      ],
-    ] as const;
-    const matched = rules
-      .filter(([, , passes]) => passes)
-      .map(([id, points]) => ({ id, points }));
-    const score = matched.reduce((sum, rule) => sum + rule.points, 0);
-    results.push(
-      result(
-        'NFT trader',
-        PROFILE_RULES.nftTrader.threshold,
-        score,
-        score >= PROFILE_RULES.nftTrader.threshold &&
-          trades >= PROFILE_RULES.nftTrader.minimumTrades,
-        `${trades} verified NFT purchase or sale transactions on ${days} days across ${collections} collections.`,
-        matched,
-        {
-          nft_trade_transactions: trades,
-          nft_trading_days: days,
-          nft_collections: collections,
-          has_purchases: nft.hasPurchases!,
-          has_sales: nft.hasSales!,
         },
       ),
     );

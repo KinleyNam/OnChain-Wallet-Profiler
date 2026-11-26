@@ -18,8 +18,6 @@ import {
 } from '../lib/wallet-data';
 import {
   extractDefiActions,
-  extractNftTrades,
-  type PipelineNftTransfer,
   type PipelineTransaction,
 } from './profile-pipelines';
 
@@ -81,16 +79,6 @@ type TokenTransfer = {
   tokenDecimal?: string;
 };
 
-type NftTransfer = {
-  hash: string;
-  timeStamp: string;
-  from: string;
-  to: string;
-  contractAddress: string;
-  tokenID?: string;
-  tokenValue?: string;
-};
-
 const PROTOCOL_CONTRACTS = new Map<string, string>([
   ['0x7a250d5630b4cf539739df2c5dacb4c659f2488d', 'Uniswap'],
   ['0xe592427a0aece92de3edee1f18e0157c05861564', 'Uniswap'],
@@ -101,10 +89,6 @@ const PROTOCOL_CONTRACTS = new Map<string, string>([
   ['0x7d2768de32b0b80b7a3454c06bdac7a9a6dc7a9', 'Aave'],
   ['0xae7ab96520de3a18e5e111b5eaab095312d7fe84', 'Lido'],
   ['0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0', 'Lido'],
-  ['0x00000000000000adc04c56bf30ac9d3c0aaf14dc', 'OpenSea'],
-  ['0x0000000000000068f116a894984e2db1123eb395', 'OpenSea'],
-  ['0x000000000000ad05ccc4f10045630fb830b95127', 'Blur'],
-  ['0xb2ecfe4e4d61f8790bbb9de2d1259b9e2410cea5', 'Blur'],
   ['0x0000000000000000000000000000000000000000', 'No protocol'],
 ]);
 
@@ -308,10 +292,14 @@ function buildWalletData(
   }
   transactions.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   const movements = transactions.flatMap((row) => row.movements);
-  const daily = Array.from({ length: periodDays }, (_, index) => {
-    const date = new Date(start + index * DAY).toISOString().slice(0, 10);
-    return transactions.filter((row) => row.timestamp.slice(0, 10) === date).length;
-  });
+  const countsByDay = new Map<string, number>();
+  for (const transaction of transactions) {
+    const day = transaction.timestamp.slice(0, 10);
+    countsByDay.set(day, (countsByDay.get(day) ?? 0) + 1);
+  }
+  const daily = Array.from({ length: periodDays }, (_, index) =>
+    countsByDay.get(new Date(start + index * DAY).toISOString().slice(0, 10)) ?? 0,
+  );
   const successful = transactions.filter((row) => row.successful !== false);
   const protocols = protocolDefinitions.map((definition) => {
     const count = successful.filter((row) => row.protocol === definition.name).length;
@@ -369,11 +357,9 @@ export async function createEtherscanAnalysis(
 ): Promise<AnalysisRecord> {
   const normalized = address.toLowerCase();
   const asOf = new Date().toISOString();
-  const [normal, tokens, nft721, nft1155] = await Promise.all([
+  const [normal, tokens] = await Promise.all([
     allPages<NormalTransaction>(key, 'txlist', normalized),
     optional('ERC-20 transfers', allPages<TokenTransfer>(key, 'tokentx', normalized)),
-    optional('ERC-721 transfers', allPages<NftTransfer>(key, 'tokennfttx', normalized)),
-    optional('ERC-1155 transfers', allPages<NftTransfer>(key, 'token1155tx', normalized)),
   ]);
   const data = buildWalletData(normalized, periodDays, asOf, normal.rows, tokens?.rows ?? []);
   data.transactionCoverage = {
@@ -417,28 +403,9 @@ export async function createEtherscanAnalysis(
       tokensReceived: fungible.filter((item) => item.to.toLowerCase() === normalized).map(token),
     };
   }).filter((row) => row.timestamp);
-  const nftTransfers: PipelineNftTransfer[] = [
-    ...(nft721?.rows ?? []),
-    ...(nft1155?.rows ?? []),
-  ].map((row) => ({
-    hash: row.hash.toLowerCase(),
-    timestamp: timestamp(row.timeStamp),
-    fromAddress: row.from.toLowerCase(),
-    toAddress: row.to.toLowerCase(),
-    collectionId: `ethereum:${row.contractAddress.toLowerCase()}`,
-  })).filter((row) => row.timestamp);
   const defiActions = extractDefiActions(normalized, pipelineTransactions);
-  const nftTrades = extractNftTrades({
-    wallet: normalized,
-    transactions: pipelineTransactions,
-    nftTransfers,
-  });
   const transactions30d = coversWindow(normal, asOf, 30);
   const transactions90d = coversWindow(normal, asOf, 90);
-  const nftTrades30d = transactions30d &&
-    coversWindow(tokens, asOf, 30) &&
-    coversWindow(nft721, asOf, 30) &&
-    coversWindow(nft1155, asOf, 30);
   const verifiedEvidence: VerifiedWalletEvidence = {
     address: normalized,
     cutoff: asOf,
@@ -448,14 +415,12 @@ export async function createEtherscanAnalysis(
       lifetimeTransactions: normal.complete,
       dexTrades30d: false,
       defiActions30d: periodDays >= 30 && transactions30d,
-      nftTrades30d: periodDays >= 30 && nftTrades30d,
       holdingHistory90d: false,
       stakingPositionsAndDeposits: false,
     },
     transactions: verifiedTransactions,
     dexTrades: [],
     defiActions,
-    nftTrades,
     holdings: [],
     stakingPositions: [],
   };

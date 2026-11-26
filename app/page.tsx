@@ -6,9 +6,8 @@ import {
   loadWalletAnalysis,
 } from '@/lib/analysis-api';
 import { WalletLoading } from './wallet-loading';
-import { DemoButton } from './demo-button';
-import { createDemoAnalysis, DEMO_ADDRESS } from '@/lib/demo-analysis';
-import { ProfileTransactionProof, TransactionReferences } from './profile-transaction-proof';
+import { ActivitySummary, FlowOverview, MetricCards, MovementSummary, OverviewProfile, ProtocolOverview, RiskOverview } from './dashboard-views';
+import { ProfileTransactionProof } from './profile-transaction-proof';
 import type { ProfileResult } from '../server/analysis';
 import {
   BalancesPanel,
@@ -26,16 +25,14 @@ import {
   Info,
   Search,
   Wallet,
-  Zap,
+  ArrowDownUp,
+  BarChart3,
+  BookOpen,
+  Layers3,
+  ShieldCheck,
+  Waves,
 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from '@/components/ui/select';
 import {
   Dialog,
   DialogContent,
@@ -67,18 +64,11 @@ function tabFromPath(pathname = window.location.pathname): TabId {
 export default function Home() {
   const initialParams = new URLSearchParams(window.location.search);
   const suppliedAddress = initialParams.get('address')?.trim() ?? '';
-  const initialDemoMode = initialParams.get('demo') === 'defi';
-  const initialAddress = initialDemoMode ? DEMO_ADDRESS : /^0x[a-fA-F0-9]{40}$/.test(suppliedAddress)
+  const initialAddress = /^0x[a-fA-F0-9]{40}$/.test(suppliedAddress)
     ? suppliedAddress
     : '';
-  const suppliedPeriod = initialParams.get('period');
-  const initialPeriod = ['30', '90', '180'].includes(suppliedPeriod ?? '')
-    ? suppliedPeriod!
-    : '30';
   const [input, setInput] = useState(initialAddress),
     [address, setAddress] = useState(initialAddress),
-    [period, setPeriod] = useState(initialPeriod),
-    [demoMode, setDemoMode] = useState(initialDemoMode),
     [tab, setTab] = useState<TabId>(() => tabFromPath()),
     [error, setError] = useState(''),
     [ready, setReady] = useState(false),
@@ -101,34 +91,14 @@ export default function Home() {
     () => new Map((walletData?.transactions ?? []).map((transaction) => [transaction.hash.toLowerCase(), transaction])),
     [walletData],
   );
-  const activityReferences = useMemo(() => {
-    const result = {
-      activity: { total: 0, references: [] as NonNullable<ProfileResult['relatedTransactions']> },
-      protocols: { total: 0, references: [] as NonNullable<ProfileResult['relatedTransactions']> },
-      counterparties: { total: 0, references: [] as NonNullable<ProfileResult['relatedTransactions']> },
-    };
-    for (const transaction of walletData?.transactions ?? []) {
-      if (!/^0x[a-f0-9]{64}$/i.test(transaction.hash)) continue;
-      const reference = { hash: transaction.hash, timestamp: transaction.timestamp, label: transaction.type };
-      result.activity.total++;
-      if (result.activity.references.length < 10) result.activity.references.push(reference);
-      if (!['Unknown', 'No protocol'].includes(transaction.protocol)) {
-        result.protocols.total++;
-        if (result.protocols.references.length < 10) result.protocols.references.push({ ...reference, label: transaction.protocol });
-      }
-      if (transaction.fromAddress || transaction.toAddress || transaction.movements.length) {
-        result.counterparties.total++;
-        if (result.counterparties.references.length < 10) result.counterparties.references.push({ ...reference, label: 'Counterparty interaction' });
-      }
-    }
-    return result;
-  }, [walletData]);
+  const [monthSelection, setMonthSelection] = useState<{ analysisId: string; month: string } | null>(null);
   function updateRoute(nextTab: TabId, mode: 'push' | 'replace' = 'push') {
     const nextUrl = new URL(window.location.href);
     nextUrl.pathname = `/profiler/${tabRoutes[nextTab]}`;
     if (address) nextUrl.searchParams.set('address', address);
     else nextUrl.searchParams.delete('address');
-    nextUrl.searchParams.set('period', period);
+    nextUrl.searchParams.delete('demo');
+    nextUrl.searchParams.delete('period');
     window.history[mode === 'push' ? 'pushState' : 'replaceState'](
       {},
       '',
@@ -139,24 +109,23 @@ export default function Home() {
   }
   useEffect(() => {
     const currentTab = tabFromPath();
-    if (window.location.pathname.replace(/\/$/, '') === '/profiler') {
+    const needsTabPath = window.location.pathname.replace(/\/$/, '') === '/profiler';
+    if (needsTabPath || new URLSearchParams(window.location.search).has('period') || new URLSearchParams(window.location.search).has('demo')) {
       const nextUrl = new URL(window.location.href);
-      nextUrl.pathname = `/profiler/${tabRoutes[currentTab]}`;
+      if (needsTabPath) nextUrl.pathname = `/profiler/${tabRoutes[currentTab]}`;
       if (initialAddress) nextUrl.searchParams.set('address', initialAddress);
       else nextUrl.searchParams.delete('address');
-      nextUrl.searchParams.set('period', initialPeriod);
+      nextUrl.searchParams.delete('demo');
+      nextUrl.searchParams.delete('period');
       window.history.replaceState({}, '', nextUrl);
     }
     function restoreRoute() {
       const params = new URLSearchParams(window.location.search);
-      const restoredDemoMode = params.get('demo') === 'defi';
       const restoredAddress = params.get('address')?.trim() ?? '';
-      const restoredPeriod = params.get('period');
       setTab(tabFromPath());
-      setDemoMode(restoredDemoMode);
-      const nextAddress = restoredDemoMode ? DEMO_ADDRESS : restoredAddress;
+      const nextAddress = restoredAddress;
       if (/^0x[a-fA-F0-9]{40}$/.test(nextAddress)) {
-        if (nextAddress !== address || restoredDemoMode !== demoMode) setReady(false);
+        if (nextAddress !== address) setReady(false);
         setAddress(nextAddress);
         setInput(nextAddress);
       } else {
@@ -167,35 +136,21 @@ export default function Home() {
         setServerIndicators(null);
         setReady(false);
       }
-      if (['30', '90', '180'].includes(restoredPeriod ?? '')) {
-        if (restoredPeriod !== period) setReady(false);
-        setPeriod(restoredPeriod!);
+      if (params.has('period') || params.has('demo')) {
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.searchParams.delete('period');
+        cleanUrl.searchParams.delete('demo');
+        window.history.replaceState({}, '', cleanUrl);
       }
       setSelectedProtocol(null);
     }
     window.addEventListener('popstate', restoreRoute);
     return () => window.removeEventListener('popstate', restoreRoute);
-  }, [initialAddress, initialPeriod, address, period, demoMode]);
+  }, [initialAddress, address]);
   useEffect(() => {
     if (!address) return;
-    if (demoMode) {
-      const timeout = window.setTimeout(() => {
-        const result = createDemoAnalysis(Number(period));
-        setWalletData(result.wallet);
-        setAnalysisId('demo');
-        setServerProfiles(result.profiles);
-        setServerPrimary(result.primaryProfile);
-        setDataSource('Demo dataset');
-        setRuleVersion('classification-v1.0');
-        setMappingVersion('demo-mappings');
-        setProviderCutoff(result.wallet.asOf);
-        setServerIndicators(result.indicators);
-        setReady(true);
-      }, 500);
-      return () => window.clearTimeout(timeout);
-    }
     const controller = new AbortController();
-    loadWalletAnalysis(address, Number(period), controller.signal)
+    loadWalletAnalysis(address, controller.signal)
       .then((result) => {
         if (controller.signal.aborted) return;
         setWalletData(result.wallet);
@@ -218,7 +173,7 @@ export default function Home() {
         setServiceErrorCode(cause instanceof AnalysisApiError ? cause.code ?? '' : '');
       });
     return () => controller.abort();
-  }, [address, period, retry, demoMode]);
+  }, [address, retry]);
   function analyze(value = input) {
     const nextAddress = value.trim();
     if (!/^0x[a-fA-F0-9]{40}$/.test(nextAddress)) {
@@ -228,7 +183,6 @@ export default function Home() {
       return;
     }
     setError('');
-    setDemoMode(false);
     setServiceError('');
     setServiceErrorCode('');
     setReady(false);
@@ -239,66 +193,69 @@ export default function Home() {
     nextUrl.pathname = `/profiler/${tabRoutes.overview}`;
     nextUrl.searchParams.set('address', nextAddress);
     nextUrl.searchParams.delete('demo');
-    nextUrl.searchParams.set('period', period);
+    nextUrl.searchParams.delete('period');
     window.history.replaceState({}, '', nextUrl);
     setTab('overview');
     setSelectedProtocol(null);
   }
   if (!walletData || !ready || !serverProfiles || !serverIndicators) {
+    const isIdle = !address && !serviceError;
     return (
-      <div className="app-shell">
+      <div className={`app-shell${isIdle ? ' profiler-idle-shell' : ''}`}>
         <main className="workspace">
           <header className="topbar">
             <div className="topbar-inner">
               <div className="brand-group">
                 <a className="brand" href="/" aria-label="OnChain home">
                   <img className="brand-logo" src="/brand-logo.png" alt="" />
-                  <span>OnChain</span>
-                  <span className="brand-divider" />
-                  <small>Wallet profiler</small>
+                  <span>OnChain Wallet Profiler</span>
                 </a>
-                <DemoButton />
               </div>
             </div>
           </header>
-          <div className="page">
-            <div className="page-title"><h1>Wallet profiler</h1><p>Understand a wallet through its behavior.</p></div>
-            <form className="search-form" onSubmit={(event) => { event.preventDefault(); analyze(); }}>
-              <Search size={20} />
-              <input aria-label="Ethereum wallet address" value={input} onChange={(event) => setInput(event.target.value)} placeholder="Enter an Ethereum wallet address (0x…)" spellCheck={false} />
-              <Select value={period} onValueChange={(value) => {
-                if (!value || value === period) return;
-                setPeriod(value);
-                setServiceError('');
-                const nextUrl = new URL(window.location.href);
-                nextUrl.searchParams.set('period', value);
-                window.history.replaceState({}, '', nextUrl);
-              }}>
-                <SelectTrigger aria-label="Analysis period" className="period-select">
-                  <SelectValue>{`Last ${period} days`}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {['30', '90', '180'].map((value) => (
-                    <SelectItem key={value} value={value}>Last {value} days</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <button className="primary" type="submit">Analyze wallet <ArrowRight size={17} /></button>
-            </form>
-            {error && <p className="error" role="alert">{error}</p>}
-            {serviceError ? <div role="alert" className="loading-error">
-              <h2>{serviceErrorCode === 'SMART_CONTRACT_ADDRESS' ? 'Smart contract detected' : 'Analysis unavailable'}</h2>
-              <p>{serviceError}</p>
-              {serviceErrorCode !== 'SMART_CONTRACT_ADDRESS' && (
-                <button className="secondary" type="button" onClick={() => { setServiceError(''); setServiceErrorCode(''); setRetry((value) => value + 1); }}>Try again</button>
-              )}
-            </div> : address ? <WalletLoading tab={tab} period={period} /> : (
+          <div className={`page${isIdle ? ' profiler-idle-page' : ''}`}>
+            {isIdle ? <>
+              <div className="profiler-idle-controls">
+                <div className="profiler-idle-identity" aria-hidden="true">
+                  <code>0x••••••••••••••••••••</code>
+                  <span>No risk identified</span>
+                </div>
+                <form className="search-form profiler-idle-search" onSubmit={(event) => { event.preventDefault(); analyze(); }}>
+                  <div className="profiler-idle-input">
+                    <Search size={20} />
+                    <input aria-label="Ethereum wallet address" value={input} onChange={(event) => setInput(event.target.value)} placeholder="0x… paste any Ethereum wallet address" spellCheck={false} />
+                  </div>
+                  <button className="primary" type="submit">Analyze <ArrowRight size={17} /></button>
+                </form>
+              </div>
+              {error && <p className="error profiler-idle-error" role="alert">{error}</p>}
               <section className="profiler-empty" aria-labelledby="profiler-empty-title">
-                <span className="profiler-empty-icon" aria-hidden="true"><Wallet size={25} /></span>
+                <span className="profiler-empty-icon" aria-hidden="true"><Wallet size={46} strokeWidth={1.7} /></span>
                 <h2 id="profiler-empty-title">Enter a wallet address to start analysis</h2>
                 <p>Paste an Ethereum externally owned account above. Smart contract addresses are identified before analysis begins.</p>
               </section>
-            )}
+              <footer className="footer profiler-idle-footer">
+                <span>OnchainWalletProfiler</span>
+                <span>Powered by Nansen AI</span>
+                <span>© {new Date().getFullYear()}</span>
+              </footer>
+            </> : <>
+              <div className="page-title"><h1>Wallet profiler</h1><p>Understand a wallet through its behavior.</p></div>
+              <form className="search-form" onSubmit={(event) => { event.preventDefault(); analyze(); }}>
+                <Search size={20} />
+                <input aria-label="Ethereum wallet address" value={input} onChange={(event) => setInput(event.target.value)} placeholder="Enter an Ethereum wallet address (0x…)" spellCheck={false} />
+                <span className="lifetime-scope">Full lifetime</span>
+                <button className="primary" type="submit">Analyze wallet <ArrowRight size={17} /></button>
+              </form>
+              {error && <p className="error" role="alert">{error}</p>}
+              {serviceError ? <div role="alert" className="loading-error">
+                <h2>{serviceErrorCode === 'SMART_CONTRACT_ADDRESS' ? 'Smart contract detected' : 'Analysis unavailable'}</h2>
+                <p>{serviceError}</p>
+                {serviceErrorCode !== 'SMART_CONTRACT_ADDRESS' && (
+                  <button className="secondary" type="button" onClick={() => { setServiceError(''); setServiceErrorCode(''); setRetry((value) => value + 1); }}>Try again</button>
+                )}
+              </div> : <WalletLoading tab={tab} />}
+            </>}
           </div>
         </main>
       </div>
@@ -306,14 +263,35 @@ export default function Home() {
   }
   const protocols = walletData.protocols;
   const asOf = Date.parse(walletData.asOf);
-  const asOfDay = Date.parse(`${walletData.asOf.slice(0, 10)}T00:00:00Z`);
-  const date = (day: number) => new Date(asOfDay + (day - 10) * 86_400_000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  const startDay = Date.parse(walletData.start);
+  const dateForIndex = (index: number) => new Date(startDay + index * 86_400_000)
+    .toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
   const endDate = new Date(asOf).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
-  const days = Number(period),
+  const days = walletData.days,
     daily = walletData.daily,
     count = daily.reduce((a, b) => a + b, 0),
-    active = daily.filter((n) => n > 0).length,
-    anomalyScore = serverIndicators?.score ?? 0;
+    active = daily.filter((n) => n > 0).length;
+  const firstObserved = walletData.firstActivity
+    ? new Date(walletData.firstActivity).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
+    : null;
+  const observedDays = walletData.firstActivity
+    ? Math.max(1, Math.floor((asOf - Date.parse(walletData.firstActivity)) / 86_400_000) + 1)
+    : 0;
+  const chartStart = walletData.firstActivity
+    ? Math.max(0, Math.floor((Date.parse(walletData.firstActivity.slice(0, 10) + 'T00:00:00Z') - startDay) / 86_400_000))
+    : 0;
+  const activityCutoff = Math.min(asOf, Date.now());
+  const chartDays = Math.min(days, daily.length, Math.max(0, Math.floor((activityCutoff - startDay) / 86_400_000) + 1));
+  const monthlyCounts = new Map<string, number>();
+  for (let index = 0; index < chartDays; index++) {
+    if (!daily[index]) continue;
+    const month = new Date(startDay + index * 86_400_000).toISOString().slice(0, 7);
+    monthlyCounts.set(month, (monthlyCounts.get(month) ?? 0) + daily[index]);
+  }
+  const lastYear = new Date(activityCutoff).getUTCFullYear();
+  const firstYear = Math.min(lastYear, new Date(walletData.firstActivity ?? activityCutoff).getUTCFullYear());
+  const heatYears = Array.from({ length: lastYear - firstYear + 1 }, (_, index) => firstYear + index);
+  const busiestMonth = Math.max(0, ...monthlyCounts.values());
   const identifiedProtocolShare = protocols
     .filter((p) => !['Unknown', 'No protocol'].includes(p.name))
     .reduce((sum, p) => sum + p.share, 0);
@@ -328,49 +306,31 @@ export default function Home() {
   const unattributed = protocols.find(
     (protocol) => protocol.name === 'Unknown' && protocol.count > 0,
   );
-  const displayedTransferVolume = walletData.flows.length
-    ? walletData.flows.reduce(
-        (sum, flow) => sum + flow.incoming + flow.outgoing,
-        0,
-      )
-    : walletData.volume;
   const profileResults = serverProfiles;
   const assignedProfiles = profileResults.filter((profile) => profile.assigned).sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
   const classification = serverPrimary;
-  const profileDescriptions: Record<string, string> = {
-    'Active trader':
-      'Frequent transactions and regular activity across the analysis period.',
-    'Long-term holder':
-      'A holding-oriented profile supported by at least 90 days of wallet history.',
-    'DeFi participant':
-      'Activity spans decentralized exchanges, lending and staking protocols.',
-    'NFT trader':
-      'Repeated marketplace activity across OpenSea, Blur or both.',
-    'Staking participant':
-      'Recurring staking activity and liquid-staking asset movements.',
-    'Dormant or new wallet':
-      'Recent activity and available wallet history support this profile.',
-    'No profile assigned':
-      'No profile reached its assignment threshold for this period.',
-    'No profile matched':
-      'The available verified evidence did not meet any assignment rule.',
-    'Not enough data to classify':
-      'The available source records do not verify the inputs required by these profile rules.',
-  };
   const riskScore = serverIndicators.score;
   const riskBand = serverIndicators.band;
   const riskSignals = serverIndicators.signals;
-  const chart = Array.from({ length: 15 }, (_, i) => ({
-    day: date(11 - days + Math.floor((i * days) / 15)),
-    transactions: daily
-      .slice(Math.floor((i * days) / 15), Math.floor(((i + 1) * days) / 15))
-      .reduce((a, b) => a + b, 0),
-  }));
+  const selectedMonth = monthSelection?.analysisId === analysisId ? monthSelection.month : null;
+  const monthlyTransactions = selectedMonth
+    ? walletData.transactions.filter((transaction) => transaction.timestamp.startsWith(selectedMonth))
+    : walletData.transactions;
+  const recentStart = Math.min(chartDays, Math.max(chartStart, chartDays - 26 * 7));
+  const chart = Array.from({ length: Math.ceil((chartDays - recentStart) / 7) }, (_, i) => {
+    const start = recentStart + i * 7;
+    const end = Math.min(start + 7, chartDays);
+    return {
+      day: dateForIndex(start),
+      range: `${dateForIndex(start)} – ${dateForIndex(end - 1)}`,
+      transactions: daily.slice(start, end).reduce((a, b) => a + b, 0),
+    };
+  });
+  const pnl = walletData.tradePerformance?.realizedPnlUsd;
+  const hasPnl = typeof pnl === 'number' && Number.isFinite(pnl);
   async function exportCard() {
     try {
-      const blob = demoMode
-        ? new Blob([JSON.stringify({ demo: true, wallet: walletData, profiles: profileResults }, null, 2)], { type: 'application/json' })
-        : await downloadWalletExport(analysisId);
+      const blob = await downloadWalletExport(analysisId);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -386,7 +346,7 @@ export default function Home() {
       <div className="panel-heading">
         <div>
           <h2>Protocols used</h2>
-          <p>Named transactions in the last {days} days. Select a protocol to inspect them.</p>
+          <p>Named transactions across available lifetime history. Select a protocol to inspect them.</p>
         </div>
       </div>
       {namedProtocols.length ? (
@@ -422,7 +382,7 @@ export default function Home() {
       ) : (
         <div className="protocol-empty">
           <b>No named protocol transactions detected</b>
-          <p>The transactions in this period do not identify a protocol.</p>
+          <p>The available transactions do not identify a protocol.</p>
         </div>
       )}
       {(directTransfers || unattributed) && (
@@ -450,52 +410,54 @@ export default function Home() {
         <div>
           <h2>Activity heatmap</h2>
           <p>
-            {active} active days in the last {days} days
+            {active.toLocaleString()} active days across available history
           </p>
         </div>
-        <span className="subtle">Daily transactions</span>
+        <span className="subtle">Monthly transactions</span>
       </div>
-      <div className="heat-scroll">
-        <div className="heat-labels">
-          <span>Day 1</span>
-          <span>Day 4</span>
-          <span>Day 7</span>
-        </div>
-        <div
-          className="heatmap"
-          style={{
-            gridTemplateColumns: `repeat(${Math.ceil(days / 7)},minmax(10px,1fr))`,
-          }}
-        >
-          {Array.from({ length: Math.ceil(days / 7) * 7 }, (_, i) => {
-            const value = daily[i] ?? 0,
-              n = value === 0 ? 0 : Math.min(5, Math.ceil(value / 6));
-            return (
-              <button
-                key={i}
-                disabled={i >= days}
-                className={'heat level-' + n}
-                aria-label={`${date(11 - days + i)}: ${value} transactions`}
-                title={`${date(11 - days + i)}: ${value} transactions`}
-                onClick={() =>
-                  setModal(
-                    `${date(11 - days + i)}: ${value} transactions in the selected analysis period.`,
-                  )
-                }
-              />
-            );
-          })}
+      <div className="heat-scroll lifetime-heat-scroll">
+        <div className="lifetime-heatmap">
+          <span className="heat-year-heading">Year</span>
+          {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((month) =>
+            <span className="heat-month-heading" key={month}>{month}</span>
+          )}
+          {heatYears.flatMap((year) => [
+            <span className="heat-year" key={`year-${year}`}>{year}</span>,
+            ...Array.from({ length: 12 }, (_, index) => {
+              const month = `${year}-${String(index + 1).padStart(2, '0')}`;
+              const value = monthlyCounts.get(month) ?? 0;
+              const outsideWalletHistory = (year === firstYear && index + 1 < new Date(walletData.firstActivity ?? asOf).getUTCMonth() + 1)
+                || Date.UTC(year, index, 1) > activityCutoff;
+              const level = value && busiestMonth ? Math.max(1, Math.ceil((value / busiestMonth) * 5)) : 0;
+              const label = new Date(Date.UTC(year, index, 1)).toLocaleDateString('en-US', {
+                month: 'long', year: 'numeric', timeZone: 'UTC',
+              });
+              return <button
+                type="button"
+                key={month}
+                disabled={outsideWalletHistory}
+                className={`heat level-${outsideWalletHistory ? 0 : level}`}
+                aria-label={outsideWalletHistory ? `${label}: outside available history` : `${label}: ${value.toLocaleString()} transactions`}
+                title={outsideWalletHistory ? `${label}: outside available history` : `${label}: ${value.toLocaleString()} transactions`}
+                aria-pressed={selectedMonth === month}
+                onClick={() => {
+                  setMonthSelection({ analysisId, month });
+                  if (tab !== 'activity') updateRoute('activity');
+                }}
+              />;
+            }),
+          ])}
         </div>
       </div>
       <div className="heat-footer">
-        <span>{date(11 - days)}</span>
+        <span>{firstObserved ?? 'No observed transactions'}</span>
         <span>{endDate}</span>
         <div>
-          Less{' '}
+          0 transactions{' '}
           {[0, 1, 2, 3, 4, 5].map((n) => (
             <i key={n} className={'heat level-' + n} />
           ))}{' '}
-          More
+          {busiestMonth.toLocaleString()} transactions
         </div>
       </div>
     </section>
@@ -514,93 +476,9 @@ export default function Home() {
         </section>
       }
     >
-      <ActivityChart data={chart} />
+      <ActivityChart data={chart} timeframe={chart.length ? `${chart[0].day} – ${dateForIndex(chartDays - 1)}` : 'No available activity dates'} />
     </Suspense>
   );
-  const evidence = (
-    <section className="panel evidence">
-      <div className="panel-heading">
-        <div>
-          <h2>Supporting evidence</h2>
-          <p>Activity indicators for this wallet.</p>
-        </div>
-      </div>
-      {[
-        {
-          title: 'Transaction activity',
-          desc: `${count} transactions across ${active} active days`,
-          confidence: 'Observed',
-          proof: activityReferences.activity,
-          context: 'Examples from the loaded transaction ledger. The activity count uses all records in the selected period.',
-        },
-        {
-          title: 'Protocol coverage',
-          desc: `${identifiedProtocolShare.toFixed(1)}% attributed to identified protocols`,
-          confidence: 'Attributed',
-          proof: activityReferences.protocols,
-          context: 'Examples with a named protocol in the loaded ledger. Attribution depends on the current protocol mappings.',
-        },
-        {
-          title: 'Counterparties',
-          desc: `${walletData.counterparties} distinct counterparties across the selected period`,
-          confidence: 'Observed',
-          proof: activityReferences.counterparties,
-          context: 'Examples with an address or token-transfer counterparty. Dedicated counterparty statistics may include records outside this loaded ledger.',
-        },
-      ].map(({ title, desc, confidence, proof, context }) => (
-        <div className="evidence-row" key={title}>
-          <div>
-            <b>{title}</b>
-            <p>{desc}</p>
-            <TransactionReferences
-              references={proof.references}
-              total={proof.total}
-              transactionByHash={transactionByHash}
-              context={context}
-              emptyText="No transaction hash is available for this indicator."
-            />
-          </div>
-          <span>{confidence}</span>
-        </div>
-      ))}
-      <div className="provenance">
-        <Info size={16} />
-        <div>
-          Analysis ends {endDate}.{' '}
-          {(unattributed?.share ?? 0).toFixed(1)}% of transactions
-          are unattributed. Unattributed transactions are excluded from named
-          protocol totals.
-        </div>
-      </div>
-    </section>
-  );
-  const stats = [
-    {
-      icon: Activity,
-      title: 'Transactions',
-      value: count.toLocaleString(),
-      desc: 'Across the selected period',
-    },
-    {
-      icon: ArrowUpRight,
-      title: 'Transfer volume',
-      value: walletData.usdValuation === 'unavailable' ? '—' : usd(displayedTransferVolume),
-      desc: walletData.usdValuation === 'partial' ? 'Priced transfers only · partial value' :
-        walletData.usdValuation === 'unavailable' ? 'USD prices unavailable' : 'Gross incoming + outgoing value',
-    },
-    {
-      icon: Wallet,
-      title: 'Unique counterparties',
-      value: walletData.counterparties.toLocaleString(),
-      desc: 'Distinct interacting addresses',
-    },
-    {
-      icon: Zap,
-      title: 'Active days',
-      value: `${active} / ${days}`,
-      desc: `${Math.round((active / days) * 100)}% activity rate`,
-    },
-  ];
   return (
     <div className="app-shell">
       <main className="workspace">
@@ -609,12 +487,12 @@ export default function Home() {
             <div className="brand-group">
               <a className="brand" href="/" aria-label="OnChain home">
                 <img className="brand-logo" src="/brand-logo.png" alt="" />
-                <span>OnChain</span>
-                <span className="brand-divider" />
-                <small>Wallet profiler</small>
+                <span>OnChain Wallet Profiler</span>
               </a>
-              <DemoButton />
             </div>
+            <button className="secondary export" onClick={exportCard}>
+              <Download size={16} /> Export profile
+            </button>
           </div>
         </header>
         <div className="page">
@@ -624,67 +502,7 @@ export default function Home() {
               <p>Understand a wallet through its behavior.</p>
             </div>
           </div>
-          <form
-            className="search-form"
-            onSubmit={(e) => {
-              e.preventDefault();
-              analyze();
-            }}
-          >
-            <Search size={20} />
-            <input
-              aria-label="Ethereum wallet address"
-              placeholder="Enter an Ethereum wallet address (0x…)"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              spellCheck={false}
-            />
-            <Select
-              value={period}
-              onValueChange={(v) => {
-                if (v && v !== period) {
-                  setReady(false);
-                  setServiceError('');
-                  setPeriod(v);
-                  setSelectedProtocol(null);
-                  const nextUrl = new URL(window.location.href);
-                  nextUrl.searchParams.set('address', address);
-                  nextUrl.searchParams.set('period', v);
-                  window.history.replaceState({}, '', nextUrl);
-                }
-              }}
-            >
-              <SelectTrigger
-                aria-label="Analysis period"
-                className="period-select"
-              >
-                <SelectValue>{`Last ${period} days`}</SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {['30', '90', '180'].map((v) => (
-                  <SelectItem key={v} value={v}>
-                    Last {v} days
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <button className="primary" type="submit">
-              Analyze wallet
-              <ArrowRight size={17} />
-            </button>
-          </form>
-          {error && (
-            <p className="error" role="alert">
-              {error}
-            </p>
-          )}
-          {walletData.transactionCoverage?.complete === false && (
-            <p className="provenance">
-              Transaction limit reached. This analysis uses {walletData.transactionCoverage.fetched.toLocaleString()} fetched transactions
-              and other available wallet data. Transaction totals and activity charts are partial;
-              profile scores use the available verified activity and existing scoring rules.
-            </p>
-          )}
+          <div className="dashboard-query-row">
           <div className="wallet-heading">
             <div>
               <div className="wallet-title">
@@ -707,136 +525,43 @@ export default function Home() {
                   {copied ? <Check size={15} /> : <Copy size={15} />}
                 </button>
               </div>
-              <p>Analysis period: {date(11 - days)} – {endDate}</p>
+              <p>Available history: {firstObserved ?? dateForIndex(0)} – {endDate}</p>
             </div>
-            <button className="secondary export" onClick={exportCard}>
-              <Download size={16} /> Export profile
-            </button>
           </div>
-          <section className="analysis-status" aria-label="Analysis provenance">
-            <div>
-              <span>Data source</span>
-              <strong>{dataSource}</strong>
-            </div>
-            <div>
-              <span>Profiles assessed</span>
-              <strong>{profileResults.filter((profile) => profile.status !== 'NOT_ASSESSED').length} of {profileResults.length}</strong>
-            </div>
-            <div>
-              <span>Records processed</span>
-              <strong>{count.toLocaleString()}</strong>
-            </div>
-            <div>
-              <span>Rule version</span>
-              <strong>{ruleVersion}</strong>
-            </div>
-          </section>
-          <section
-            className="identity-card profile-feature"
-            aria-labelledby="behavioral-profile-title"
+          <form
+            className="search-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              analyze();
+            }}
           >
-            <div className="profile-summary">
-              <div className="identity-heading">
-                Behavioral profile{' '}
-                <span className="profile-period">{days}-day analysis</span>
-              </div>
-              <h2 id="behavioral-profile-title">{classification}</h2>
-              <p className="profile-description">
-                {profileDescriptions[classification]}
-              </p>
-              <div className="profile-matches" aria-label="Assigned profiles">
-                {assignedProfiles.map((profile) => (
-                  <span key={profile.name}>
-                    {profile.name}{profile.score === null ? '' : ` · ${profile.score}/100`}
-                  </span>
-                ))}
-                {!assignedProfiles.length && <span>No verified profile assignment</span>}
-              </div>
-            </div>
-            <div className="profile-anomaly">
-              <div className="score-row">
-                <div>
-                  <span>Behavioral anomaly</span>
-                  <p>
-                    <strong>{anomalyScore}</strong>
-                    <span> / 100</span>
-                  </p>
-                </div>
-                <span className="risk-label">{serverIndicators?.band ?? 'Unavailable'} deviation</span>
-              </div>
-              <div className="risk-track">
-                <i style={{ left: anomalyScore + '%' }} />
-              </div>
-              <div className="scale">
-                <span>Typical</span>
-                <span>Unusual</span>
-              </div>
-              <button
-                className="card-risk-summary"
-                onClick={() => {
-                  updateRoute('risk');
-                  requestAnimationFrame(() =>
-                    document.getElementById('wallet-details')?.scrollIntoView({
-                      block: 'start',
-                      behavior: 'smooth',
-                    }),
-                  );
-                }}
-              >
-                <span>Behavioral risk</span>
-                <b>{riskScore}/100 · {riskBand}</b>
-                <ArrowRight size={14} />
-              </button>
-            </div>
-            <dl className="profile-signals">
-              <div>
-                <dt>Active days</dt>
-                <dd className="active-days-value">
-                  {active} of {days}
-                  <span>days</span>
-                </dd>
-              </div>
-              <div>
-                <dt>Protocols used</dt>
-                <dd>
-                  {
-                    namedProtocols.length
-                  }
-                  <span>protocols</span>
-                </dd>
-              </div>
-              <div>
-                <dt>Transaction frequency</dt>
-                <dd>
-                  {(count / days).toFixed(1)}
-                  <span>tx / day</span>
-                </dd>
-              </div>
-            </dl>
-            <div className="profile-action">
-              <span>
-                {assignedProfiles.length ? 'Based on the verified rules and evidence shown below.' : 'Classification requires verified actions and history; observed activity alone is not scored.'}
-              </span>
-              <button
-                className="text-link"
-                onClick={() => {
-                  updateRoute('evidence');
-                  requestAnimationFrame(() =>
-                    document.getElementById('wallet-details')?.scrollIntoView({
-                      behavior: window.matchMedia(
-                        '(prefers-reduced-motion: reduce)',
-                      ).matches
-                        ? 'auto'
-                        : 'smooth',
-                      block: 'start',
-                    }),
-                  );
-                }}
-              >
-                View supporting evidence <ArrowRight size={15} />
-              </button>
-            </div>
-          </section>
+            <Search size={20} />
+            <input
+              aria-label="Ethereum wallet address"
+              placeholder="Enter an Ethereum wallet address (0x…)"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              spellCheck={false}
+            />
+            <span className="lifetime-scope">Full lifetime</span>
+            <button className="primary" type="submit">
+              Analyze wallet
+              <ArrowRight size={17} />
+            </button>
+          </form>
+          </div>
+          {error && (
+            <p className="error" role="alert">
+              {error}
+            </p>
+          )}
+          {walletData.transactionCoverage?.complete === false && (
+            <p className="provenance">
+              Transaction limit reached. This analysis uses {walletData.transactionCoverage.fetched.toLocaleString()} fetched transactions
+              and other available wallet data. Transaction totals and activity charts are partial;
+              profile scores use the available verified activity and existing scoring rules.
+            </p>
+          )}
           <Tabs
             id="wallet-details"
             value={tab}
@@ -846,51 +571,47 @@ export default function Home() {
             }}
           >
             <TabsList variant="line" className="main-tabs">
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="balances">Balances</TabsTrigger>
-              <TabsTrigger value="activity">Activity</TabsTrigger>
-              <TabsTrigger value="movements">Token movements</TabsTrigger>
-              <TabsTrigger value="flows">Fund flows</TabsTrigger>
-              <TabsTrigger value="protocols">Protocols used</TabsTrigger>
-              <TabsTrigger value="risk">Risk indicators</TabsTrigger>
-              <TabsTrigger value="evidence">Profile evidence</TabsTrigger>
+              <TabsTrigger value="overview"><BarChart3 size={15} /> Overview</TabsTrigger>
+              <TabsTrigger value="balances"><Wallet size={15} /> Balances</TabsTrigger>
+              <TabsTrigger value="activity"><Activity size={15} /> Activity</TabsTrigger>
+              <TabsTrigger value="movements"><ArrowDownUp size={15} /> Token movements</TabsTrigger>
+              <TabsTrigger value="flows"><Waves size={15} /> Fund flows</TabsTrigger>
+              <TabsTrigger value="protocols"><Layers3 size={15} /> Protocols used</TabsTrigger>
+              <TabsTrigger value="risk"><ShieldCheck size={15} /> Risk indicators</TabsTrigger>
+              <TabsTrigger value="evidence"><BookOpen size={15} /> Profile evidence</TabsTrigger>
             </TabsList>
             <TabsContent value="overview">
-              <div className="stats-grid">
-                {stats.map((x) => (
-                  <section className="stat" key={x.title}>
-                    <div>
-                      {x.title}
-                      <x.icon size={17} />
-                    </div>
-                    <strong>{x.value}</strong>
-                    <p>{x.desc}</p>
-                  </section>
-                ))}
+              <div className="design-overview-top">
+                <OverviewProfile profiles={profileResults} primary={classification} />
+                <div className="design-overview-side">
+                  <MetricCards items={[
+                    { label: 'Total balance', value: usd(walletData.totalBalance), note: 'Current Ethereum assets' },
+                    { label: 'Transactions', value: count.toLocaleString(), note: 'Available lifetime history' },
+                    { label: 'Active days', value: active.toLocaleString(), note: `${observedDays} observed days` },
+                    { label: 'Activity indicator', value: `${riskScore}/100`, note: riskBand, tone: `risk-tone-${riskBand.toLowerCase()}` },
+                    {
+                      label: 'Realized P&L',
+                      value: hasPnl ? `${pnl > 0 ? '+' : pnl < 0 ? '−' : ''}${usd(Math.abs(pnl))}` : 'Unavailable',
+                      tone: hasPnl ? (pnl > 0 ? 'positive' : pnl < 0 ? 'negative' : undefined) : undefined,
+                      note: hasPnl ? 'Provider-reported trading results' : 'No trading results supplied',
+                    },
+                  ]} />
+                </div>
               </div>
-              <div className="main-grid">
+              <div className="main-grid overview-activity-grid">
                 <div className="left-col">{activityChart}</div>
-                <div className="right-col">{protocolPanel}</div>
+                <div className="right-col overview-activity-side">
+                  <MetricCards items={[
+                    { label: 'Transaction frequency', value: (count / Math.max(1, observedDays)).toFixed(1), note: 'Per observed day' },
+                    { label: 'Counterparties', value: walletData.counterparties.toLocaleString(), note: 'Distinct addresses' },
+                  ]} />
+                  <div className="design-card overview-context">The profile and activity figures use available verified records. Open Profile evidence to see missing inputs and matched rules.</div>
+                </div>
               </div>
-              {walletData.tradePerformance && (
-                <section className="panel trade-performance">
-                  <div className="panel-heading">
-                    <div><h2>Trade performance</h2><p>Nansen trading summary for the selected period</p></div>
-                  </div>
-                  <dl>
-                    <div><dt>Trades</dt><dd>{walletData.tradePerformance.tradedTimes.toLocaleString()}</dd></div>
-                    <div><dt>Tokens traded</dt><dd>{walletData.tradePerformance.tradedTokenCount.toLocaleString()}</dd></div>
-                    <div><dt>Realized PnL</dt><dd>{usd(walletData.tradePerformance.realizedPnlUsd)}</dd></div>
-                    <div><dt>Win rate</dt><dd>{walletData.tradePerformance.winRate.toFixed(1)}%</dd></div>
-                  </dl>
-                </section>
-              )}
-              <BalancesPanel key={address + period} data={walletData} />
               {heatmap}
             </TabsContent>
             <TabsContent value="activity">
-              {activityChart}
-              {heatmap}
+              <ActivitySummary data={walletData} activeDays={active} />
               <section className="panel transaction-panel">
                 <div className="panel-heading">
                   <div>
@@ -901,107 +622,51 @@ export default function Home() {
                     </p>
                   </div>
                 </div>
+                {selectedMonth && <div className="ledger-toolbar">
+                  <span>Showing {new Date(`${selectedMonth}-01T00:00:00Z`).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })} (UTC)</span>
+                  <button type="button" className="secondary" onClick={() => setMonthSelection(null)}>Clear month</button>
+                </div>}
                 <TransactionTable
-                  key={address + period}
-                  transactions={walletData.transactions}
+                  key={address + walletData.asOf + (selectedMonth ?? '')}
+                  transactions={monthlyTransactions}
                   onProtocol={setSelectedProtocol}
                 />
               </section>
+              {heatmap}
             </TabsContent>
             <TabsContent value="balances">
-              <BalancesPanel key={address + period} data={walletData} />
+              <BalancesPanel key={address + walletData.asOf} data={walletData} />
             </TabsContent>
             <TabsContent value="movements">
+              <MovementSummary data={walletData} />
               <MovementPanel
-                key={address + period}
+                key={address + walletData.asOf}
                 movements={walletData.movements}
               />
+              <MovementSummary data={walletData} section="totals" />
             </TabsContent>
             <TabsContent value="flows">
-              <FundFlows key={address + period} data={walletData} />
+              <FlowOverview data={walletData} />
+              <FundFlows key={address + walletData.asOf} data={walletData} />
             </TabsContent>
             <TabsContent value="protocols">
-              <div className="detail-grid">
-                {protocolPanel}
-                <section className="panel">
-                  <h2>Interaction breakdown</h2>
-                  <p className="detail-copy">
-                    Compare protocol usage across exchanges, lending platforms,
-                    staking services and marketplaces.
-                  </p>
-                  {namedProtocols.length ? namedProtocols.map((p) => (
-                      <div className="breakdown" key={p.name}>
-                        <div>
-                          <b>{p.name}</b>
-                          <span>{p.share}%</span>
-                        </div>
-                        <div>
-                          <i
-                            style={{
-                              width: p.share + '%',
-                              background: p.color,
-                            }}
-                          />
-                        </div>
-                      </div>
-                    )) : (
-                    <div className="protocol-empty compact">
-                      <b>No named transactions to compare</b>
-                      <p>Only direct or unattributed activity was found.</p>
-                    </div>
-                  )}
-                  <div className="provenance">
-                    <Info size={18} /> Nansen-labeled transactions shown here do not add credit to the profile rules.
-                    Direct transfers and unknown interactions remain separate.
-                  </div>
-                </section>
-              </div>
+              <ProtocolOverview protocols={protocols} data={walletData} />
+              {protocolPanel}
             </TabsContent>
             <TabsContent value="risk">
-              <section className="panel risk-panel">
-                <div className="risk-overview">
-                  <div>
-                    <span>Behavioral risk score</span>
-                    <strong>{riskScore}<small>/100</small></strong>
-                  </div>
-                  <span className={`risk-band risk-band-${riskBand.toLowerCase()}`}>
-                    {riskBand} indicator level
-                  </span>
-                </div>
-                <p className="detail-copy">
-                  Calculated from the observable signals that could be checked
-                  in this analysis period. Each supported signal has equal
-                  weight under OWP rules v1.0.
-                </p>
-                <div className="risk-signal-list">
-                  {riskSignals.map((signal) => (
-                    <div className="risk-signal-row" key={signal.name}>
-                      <span className={signal.detected ? 'signal-on' : 'signal-off'}>
-                        {signal.detected ? 'Detected' : 'Not detected'}
-                      </span>
-                      <div>
-                        <b>{signal.name}</b>
-                        <p>{signal.value}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div className="provenance">
-                  <Info size={18} /> Risky-address exposure was not checked
-                  because no reliable label result is available. This score is
-                  an analytical indicator for further review. It does not
-                  establish money laundering, criminal activity,
-                  creditworthiness, investment risk, or legal/compliance
-                  status.
-                </div>
-              </section>
+              <RiskOverview score={riskScore} band={riskBand} signals={riskSignals} />
             </TabsContent>
             <TabsContent value="evidence">
-              {evidence}
-              <section className="panel rule-results">
+              <MetricCards items={[
+                { label: 'Profiles assessed', value: `${profileResults.filter((profile) => profile.status !== 'NOT_ASSESSED').length} / ${profileResults.length}` },
+                { label: 'Profiles assigned', value: assignedProfiles.length.toLocaleString() },
+                { label: 'Signals triggered', value: `${riskSignals.filter((signal) => signal.detected).length} / ${riskSignals.length}` },
+                { label: 'Records processed', value: count.toLocaleString() },
+              ]} />
+              <section className="panel rule-results figma-evidence-list">
                 <div className="panel-heading">
                   <div>
-                    <h2>Profile rule results</h2>
+                    <h2>Profile evidence</h2>
                     <p>Independent decisions under {ruleVersion} · {mappingVersion}. Expand related transactions beneath each result when available.</p>
                   </div>
                 </div>
@@ -1033,11 +698,11 @@ export default function Home() {
                 <dl>
                   <div><dt>Sources</dt><dd>{dataSource}</dd></div>
                   <div><dt>Mapping version</dt><dd>{mappingVersion}</dd></div>
-                  <div><dt>Requested period</dt><dd>{date(11 - days)} – {endDate}</dd></div>
+                  <div><dt>Analysis scope</dt><dd>Full lifetime · available records from {firstObserved ?? dateForIndex(0)} to {endDate}</dd></div>
                   <div><dt>Profile assessability</dt><dd>{profileResults.filter((profile) => profile.status !== 'NOT_ASSESSED').length} of {profileResults.length} assessed</dd></div>
                   <div><dt>Processed records</dt><dd>{count.toLocaleString()} transactions</dd></div>
                   <div><dt>Protocol attribution</dt><dd>{identifiedProtocolShare.toFixed(1)}% identified</dd></div>
-                  <div><dt>Historical balances</dt><dd>{walletData.enrichmentCoverage.historicalBalances ? `${walletData.historicalBalances.length.toLocaleString()} records` : 'Unavailable'}</dd></div>
+                  <div><dt>Balance snapshots (last 90 days)</dt><dd>{walletData.enrichmentCoverage.historicalBalances ? `${walletData.historicalBalances.length.toLocaleString()} records` : 'Unavailable'}</dd></div>
                   <div><dt>Dedicated counterparties</dt><dd>{walletData.enrichmentCoverage.counterparties ? `${walletData.flows.length.toLocaleString()} returned` : 'Unavailable'}</dd></div>
                   <div><dt>Trade performance</dt><dd>{walletData.enrichmentCoverage.tradePerformance ? 'Available' : 'Unavailable'}</dd></div>
                   <div><dt>Analysis cutoff</dt><dd>{new Date(asOf).toLocaleString('en-US', { timeZone: 'UTC' })} UTC</dd></div>
@@ -1053,8 +718,8 @@ export default function Home() {
                   <div>
                     <h3>Behavioral profiles</h3>
                     <p>
-                      Active Trader, Long-Term Holder, DeFi Participant, NFT
-                      Trader, Staking Participant, and Dormant or New Wallet
+                      Active Trader, Long-Term Holder, DeFi Participant,
+                      Staking Participant, and Dormant or New Wallet
                       are assessed independently. A
                       wallet may match several profiles. Read every result with
                       its decision status, score where assessable, and supporting evidence.
@@ -1064,7 +729,7 @@ export default function Home() {
                     <h3>Behavioral anomaly score</h3>
                     <p>
                       Read this activity indicator alongside the supporting
-                      evidence and selected time period. It is not a fraud,
+                      evidence and available history. It is not a fraud,
                       sanction, credit, security or investment-risk rating.
                     </p>
                   </div>
@@ -1076,7 +741,7 @@ export default function Home() {
             <span>
               <img className="footer-logo" src="/brand-logo.png" alt="" /> OnChain Wallet Profiler
             </span>
-            <span>Ethereum wallet analytics</span>
+            <span>Powered by Nansen AI</span>
             <span>© {new Date().getFullYear()} OnChain Wallet Profiler</span>
           </footer>
         </div>
@@ -1094,11 +759,11 @@ export default function Home() {
                 : selectedProtocol + ' transactions'}
           </DialogTitle>
           <DialogDescription>
-            Transactions for this wallet in the last {days} days. Expand a
+            Transactions for this wallet across available lifetime history. Expand a
             transaction to see every token movement and address.
           </DialogDescription>
           <TransactionTable
-            key={address + period + selectedProtocol}
+            key={address + walletData.asOf + selectedProtocol}
             transactions={walletData.transactions.filter(
               (t) => t.protocol === selectedProtocol,
             )}

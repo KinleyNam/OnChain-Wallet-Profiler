@@ -2,12 +2,12 @@ import Fastify, { type FastifyReply } from 'fastify';
 import {
   ANALYSIS_TTL_SECONDS,
   ETHEREUM_ADDRESS,
-  PERIODS,
   type AnalysisRecord,
 } from './analysis';
 import type { AnalysisStore } from './store';
 import { calculateIndicators } from './indicators';
 import { reconcileWalletAnalysis } from './wallet-provider';
+import { lifetimeDays } from '../lib/lifetime';
 
 type IdParams = { analysisId: string };
 type ProtocolParams = IdParams & { protocolId: string };
@@ -106,7 +106,7 @@ export function createApi(store: AnalysisStore, allowedOrigin: string | undefine
     if (exceeded) {
       const [, endpoint, limit] = exceeded;
       reply.code(503).send({ error: endpoint === 'transactions'
-        ? `This wallet has more than ${Number(limit).toLocaleString('en-US')} transactions in the selected period. Choose a shorter analysis period.`
+        ? `This wallet has more than ${Number(limit).toLocaleString('en-US')} transactions in its available history. The provider retrieval limit was reached.`
         : `This wallet has more than ${Number(limit).toLocaleString('en-US')} asset balances, which exceeds the current retrieval limit.` });
       return;
     }
@@ -134,14 +134,12 @@ export function createApi(store: AnalysisStore, allowedOrigin: string | undefine
   });
 
   app.post('/api/v1/analyses', async (request, reply) => {
-    const body = request.body as { address?: unknown; periodDays?: unknown } | null;
+    const body = request.body as { address?: unknown } | null;
     const address = typeof body?.address === 'string' ? body.address.trim() : '';
-    const periodDays = body?.periodDays;
-    if (!ETHEREUM_ADDRESS.test(address) ||
-        typeof periodDays !== 'number' ||
-        !PERIODS.includes(periodDays as (typeof PERIODS)[number])) {
+    const periodDays = lifetimeDays();
+    if (!ETHEREUM_ADDRESS.test(address)) {
       reply.code(400);
-      return { error: 'Provide an Ethereum address and a periodDays value of 30, 90, or 180.' };
+      return { error: 'Provide a valid Ethereum wallet address.' };
     }
     if (provider.getAccountType) {
       const accountType = await provider.getAccountType(address);

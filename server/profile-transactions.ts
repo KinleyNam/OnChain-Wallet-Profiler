@@ -36,9 +36,6 @@ export function attachProfileTransactions(profiles: ProfileResult[], input: Veri
   const defi30 = input.defiActions.filter((row) =>
     row.successful && row.initiatorAddress.toLowerCase() === wallet &&
     DEFI_ACTIONS.has(row.actionType) && inWindow(row.timestamp, cutoff, 30));
-  const nft30 = input.nftTrades.filter((row) =>
-    row.successful && inWindow(row.timestamp, cutoff, 30) &&
-    (row.buyerAddress.toLowerCase() === wallet || row.sellerAddress.toLowerCase() === wallet));
 
   for (const profile of profiles) {
     let rows: RelatedTransaction[] = [];
@@ -57,13 +54,6 @@ export function attachProfileTransactions(profiles: ProfileResult[], input: Veri
           hash: row.hash,
           timestamp: row.timestamp,
           label: `${row.protocolId} · ${row.actionType.replaceAll('_', ' ')}`,
-        }));
-        break;
-      case 'NFT trader':
-        rows = nft30.map((row) => ({
-          hash: row.hash,
-          timestamp: row.timestamp,
-          label: row.buyerAddress.toLowerCase() === wallet ? 'Verified NFT purchase' : 'Verified NFT sale',
         }));
         break;
       case 'Staking participant':

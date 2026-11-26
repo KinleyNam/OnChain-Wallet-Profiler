@@ -1,0 +1,5 @@
+document.querySelectorAll('.heat').forEach((heat)=>{heat.innerHTML='<i></i>'.repeat(78)});
+document.querySelectorAll('.table').forEach((table)=>{const count=Number(table.textContent.match(/repeat\((\d+)\)/)?.[1]||6);table.innerHTML='';for(let i=0;i<count;i+=1){const row=document.createElement('div');row.className='row';row.innerHTML='<div class="cell"><span class="line w50"></span></div><div class="cell"><span class="line w40"></span></div><div class="cell"><span class="line w60"></span></div>';table.appendChild(row)}});
+document.querySelectorAll('.avatars').forEach((grid)=>{grid.innerHTML='<div class="avatar-card"><div class="avatar"></div><span class="line dark w60"></span><span class="line w40" style="margin-top:6px"></span></div>'.repeat(6)});
+document.querySelectorAll('.signals').forEach((grid)=>{grid.innerHTML='<div class="signal"><span class="line dark w50"></span><span class="line w70"></span><span class="line w40"></span></div>'.repeat(6)});
+document.querySelectorAll('.evidence').forEach((list)=>{list.innerHTML='<div class="evidence-row"><span class="line dark w40"></span><span class="line w85"></span><span class="line w60"></span></div>'.repeat(5)});

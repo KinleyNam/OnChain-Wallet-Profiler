@@ -11,13 +11,13 @@ function LoadingValue({ width = 'medium' }: { width?: 'short' | 'medium' | 'long
   return <span className={`loading-value loading-value-${width}`} aria-hidden="true" />;
 }
 
-export function WalletLoading({ tab, period }: { tab: string; period: string }) {
+export function WalletLoading({ tab }: { tab: string }) {
   return (
     <output className="wallet-loading" aria-label="Loading wallet analysis">
       <div className="wallet-heading">
         <div>
           <div className="wallet-title"><span className="network-label">Ethereum</span><LoadingValue width="medium" /></div>
-          <p>Analysis period: Last {period} days</p>
+          <p>Analysis scope: Full lifetime</p>
         </div>
         <span className="loading-progress"><span className="loading-spinner" aria-hidden="true" />Loading analysis</span>
       </div>
@@ -28,7 +28,7 @@ export function WalletLoading({ tab, period }: { tab: string; period: string }) 
       </section>
       <section className="identity-card profile-feature loading-profile" aria-label="Loading behavioral profile">
         <div className="profile-summary">
-          <div className="identity-heading">Behavioral profile <span className="profile-period">{period}-day analysis</span></div>
+          <div className="identity-heading">Behavioral profile <span className="profile-period">Lifetime analysis</span></div>
           <LoadingValue width="long" />
           <div className="loading-description"><LoadingValue width="long" /></div>
         </div>

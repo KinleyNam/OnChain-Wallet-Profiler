@@ -19,6 +19,7 @@ import {
   type WalletData,
 } from '../lib/wallet-data';
 import { fetchVerifiedReceipts, type VerifiedReceipt } from './alchemy';
+import { ETHEREUM_START_DATE } from '../lib/lifetime';
 import {
   extractDefiActions,
   extractStakingPositions,
@@ -118,6 +119,14 @@ function number(value: unknown) {
   return Number.isFinite(result) ? result : 0;
 }
 
+function tokenColor(identity: string) {
+  let hash = 0;
+  for (const character of identity.toLowerCase()) {
+    hash = (Math.imul(hash, 31) + character.charCodeAt(0)) >>> 0;
+  }
+  return `hsl(${hash % 360} 70% 68%)`;
+}
+
 async function request<T>(
   key: NansenClient,
   endpoint: string,
@@ -205,35 +214,36 @@ async function transactionPages(
     return { rows, complete: false };
   };
 
-  try {
-    const result = await fetchRange(from, to, { pages: 0 });
-    if (!result.complete) onLimit();
-    return result.rows;
-  } catch (error) {
-    const days = Math.round((Date.parse(to) - Date.parse(from)) / DAY) + 1;
-    if (!(error instanceof NansenRequestError) ||
-      ![500, 502, 503, 504].includes(error.status) || days <= 30) throw error;
-    // Some large date-window requests fail upstream. Retry non-overlapping
-    // 30-day windows only after the full request has failed, keeping one cap.
-    console.warn(`Nansen transactions ${days}-day request failed (${error.status}); retrying in 30-day windows.`);
-  }
-
-  const rows: NansenTransaction[] = [];
   const budget = { pages: 0 };
-  const firstDay = Date.parse(`${from}T00:00:00Z`);
-  let lastDay = Date.parse(`${to}T00:00:00Z`);
-  while (lastDay >= firstDay) {
-    const startDay = Math.max(firstDay, lastDay - 29 * DAY);
-    const date = (day: number) => new Date(day).toISOString().slice(0, 10);
-    const result = await fetchRange(date(startDay), date(lastDay), budget);
-    rows.push(...result.rows);
-    if (!result.complete || budget.pages === maxPages) {
-      if (!result.complete || startDay > firstDay) onLimit();
-      break;
+  const date = (day: number) => new Date(day).toISOString().slice(0, 10);
+  const fetchAdaptive = async (
+    rangeFrom: string,
+    rangeTo: string,
+  ): Promise<{ rows: NansenTransaction[]; complete: boolean }> => {
+    if (budget.pages >= maxPages) return { rows: [], complete: false };
+    const before = budget.pages;
+    try {
+      return await fetchRange(rangeFrom, rangeTo, budget);
+    } catch (error) {
+      const first = Date.parse(`${rangeFrom}T00:00:00Z`);
+      const last = Date.parse(`${rangeTo}T00:00:00Z`);
+      const days = Math.round((last - first) / DAY) + 1;
+      if (!(error instanceof NansenRequestError) ||
+        ![500, 502, 503, 504].includes(error.status) || days <= 30) throw error;
+      // A failed range may have consumed successful pages before failing.
+      // Its rows are discarded, so restore their place in the record budget.
+      budget.pages = before;
+      const olderEnd = first + (Math.floor(days / 2) - 1) * DAY;
+      console.warn(`Nansen transactions ${days}-day request failed (${error.status}); splitting the date range.`);
+      const newer = await fetchAdaptive(date(olderEnd + DAY), rangeTo);
+      if (!newer.complete) return newer;
+      const older = await fetchAdaptive(rangeFrom, date(olderEnd));
+      return { rows: [...newer.rows, ...older.rows], complete: older.complete };
     }
-    lastDay = startDay - DAY;
-  }
-  return rows;
+  };
+  const result = await fetchAdaptive(from, to);
+  if (!result.complete) onLimit();
+  return result.rows;
 }
 
 async function allDexPages(
@@ -283,10 +293,6 @@ const PROTOCOL_CONTRACTS = new Map<string, string>([
   ['0x7d2768de32b0b80b7a3454c06bdac7a9a6dc7a9', 'Aave'],
   ['0xae7ab96520de3a18e5e111b5eaab095312d7fe84', 'Lido'],
   ['0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0', 'Lido'],
-  ['0x00000000000000adc04c56bf30ac9d3c0aaf14dc', 'OpenSea'],
-  ['0x0000000000000068f116a894984e2db1123eb395', 'OpenSea'],
-  ['0x000000000000ad05ccc4f10045630fb830b95127', 'Blur'],
-  ['0xb2ecfe4e4d61f8790bbb9de2d1259b9e2410cea5', 'Blur'],
 ]);
 
 function labels(value: string | string[] | undefined) {
@@ -298,8 +304,6 @@ function namedProtocol(value: string) {
   if (source.includes('uniswap')) return 'Uniswap';
   if (source.includes('aave')) return 'Aave';
   if (source.includes('lido')) return 'Lido';
-  if (source.includes('opensea') || source.includes('seaport')) return 'OpenSea';
-  if (source.includes('blur')) return 'Blur';
   return null;
 }
 
@@ -510,30 +514,21 @@ export function normalizeNansen(
     )
     .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   const movements = transactions.flatMap((row) => row.movements);
-  const daily = Array.from(
-    { length: days },
-    (_, i) =>
-      transactions.filter(
-        (row) =>
-          row.timestamp.slice(0, 10) ===
-          new Date(start + i * DAY).toISOString().slice(0, 10),
-      ).length,
+  const countsByDay = new Map<string, number>();
+  for (const transaction of transactions) {
+    const day = transaction.timestamp.slice(0, 10);
+    countsByDay.set(day, (countsByDay.get(day) ?? 0) + 1);
+  }
+  const daily = Array.from({ length: days }, (_, i) =>
+    countsByDay.get(new Date(start + i * DAY).toISOString().slice(0, 10)) ?? 0,
   );
-  const colors = [
-    '#9c83ee',
-    '#8063cf',
-    '#ada5bc',
-    '#655080',
-    '#b6a3e6',
-    '#8e91ba',
-  ];
   const holdings = balances
-    .map((item, i) => ({
+    .map((item) => ({
       tokenAddress: item.token_address,
       symbol: item.token_symbol || 'Unknown',
       name: item.token_name || item.token_symbol || 'Unknown token',
       price: number(item.price_usd),
-      color: colors[i % colors.length],
+      color: tokenColor(item.token_address || item.token_symbol || 'unknown'),
       balance: number(item.token_amount),
       value: number(item.value_usd),
     }))
@@ -597,12 +592,16 @@ export function normalizeNansen(
     amount: number(row.token_amount),
     value: number(row.value_usd),
   })).sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-  const tradePerformance = enrichment.pnlSummary ? {
-    tradedTokenCount: number(enrichment.pnlSummary.traded_token_count),
-    tradedTimes: number(enrichment.pnlSummary.traded_times),
-    realizedPnlUsd: number(enrichment.pnlSummary.realized_pnl_usd),
-    realizedPnlPercent: number(enrichment.pnlSummary.realized_pnl_percent),
-    winRate: number(enrichment.pnlSummary.win_rate),
+  const pnlSummary = enrichment.pnlSummary;
+  const rawPnl = pnlSummary?.realized_pnl_usd;
+  const hasRealizedPnl = (typeof rawPnl === 'number' || (typeof rawPnl === 'string' && rawPnl.trim() !== '')) &&
+    Number.isFinite(Number(rawPnl));
+  const tradePerformance = pnlSummary && hasRealizedPnl ? {
+    tradedTokenCount: number(pnlSummary.traded_token_count),
+    tradedTimes: number(pnlSummary.traded_times),
+    realizedPnlUsd: Number(rawPnl),
+    realizedPnlPercent: number(pnlSummary.realized_pnl_percent),
+    winRate: number(pnlSummary.win_rate),
   } : null;
   const defiPositions = (enrichment.defiHoldings?.protocols ?? [])
     .filter((item) => item.chain.toLowerCase() === 'ethereum')
@@ -633,7 +632,7 @@ export function normalizeNansen(
     enrichmentCoverage: {
       historicalBalances: enrichment.historicalBalances !== undefined,
       counterparties: enrichment.counterparties !== undefined,
-      tradePerformance: enrichment.pnlSummary !== undefined,
+      tradePerformance: tradePerformance !== null,
       defiPositions: enrichment.defiHoldings !== undefined,
     },
     totalBalance: holdings.reduce((sum, item) => sum + item.value, 0),
@@ -661,12 +660,12 @@ export async function createNansenAnalysis(
   const key = credentials instanceof NansenClient ? credentials : new NansenClient(credentials);
   const normalized = address.toLowerCase();
   const asOf = new Date().toISOString();
-  const from = new Date(
-    Date.parse(`${asOf.slice(0, 10)}T00:00:00Z`) - (periodDays - 1) * DAY,
-  )
-    .toISOString()
-    .slice(0, 10);
+  const from = ETHEREUM_START_DATE;
   const to = asOf.slice(0, 10);
+  // Balance snapshots are used for the fixed 90-day holding and staking rules.
+  const historyFrom = new Date(
+    Date.parse(`${to}T00:00:00Z`) - 89 * DAY,
+  ).toISOString().slice(0, 10);
   const dexFrom = new Date(
     Date.parse(`${asOf.slice(0, 10)}T00:00:00Z`) - 29 * DAY,
   )
@@ -689,7 +688,7 @@ export async function createNansenAnalysis(
         allPages<NansenHistoricalBalance>(key, 'historical-balances', {
           address: normalized,
           chain: 'ethereum',
-          date: { from, to },
+          date: { from: historyFrom, to },
           filters: { hide_spam_tokens: true },
         }),
       ),
@@ -750,8 +749,8 @@ export async function createNansenAnalysis(
     limit: PAGINATION.transactions.perPage * PAGINATION.transactions.maxPages,
     fetched: transactions.length,
   };
-  // These endpoints do not verify transaction initiator/status, NFT trade
-  // roles, continuous balances, staking deposit history, or lifetime history.
+  // These endpoints do not verify transaction initiator/status, continuous
+  // balances, staking deposit history, or lifetime history.
   // Keep classifier inputs unknown until a verified source supplies them.
   const uniqueTransactionCount = new Set(
     transactions.map((row) => row.transaction_hash.toLowerCase()),
@@ -877,7 +876,6 @@ export async function createNansenAnalysis(
         dexTrades30d:
           periodDays >= 30 && receiptCoverage && dexTrades !== undefined,
         defiActions30d: verifiedThirtyDayTransactions,
-        nftTrades30d: false,
         holdingHistory90d: verifiedNinetyDayHistory,
         stakingPositionsAndDeposits: verifiedStakingHistory,
       },
@@ -889,7 +887,6 @@ export async function createNansenAnalysis(
       })),
       dexTrades: verifiedDexTrades.filter((trade) => receiptByHash.has(trade.hash)),
       defiActions: verifiedDefiActions,
-      nftTrades: [],
       holdings: retainedHoldings,
       stakingPositions: verifiedStakingPositions,
     };

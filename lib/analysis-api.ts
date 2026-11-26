@@ -22,19 +22,19 @@ async function json<T>(path: string, options?: RequestInit): Promise<T> {
   return body as T;
 }
 
-export async function loadWalletAnalysis(address: string, periodDays: number, signal?: AbortSignal) {
+export async function loadWalletAnalysis(address: string, signal?: AbortSignal) {
   const created = await json<{ analysisId: string }>('/api/v1/analyses', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ address, periodDays }),
+    body: JSON.stringify({ address }),
     signal,
   });
   const [result, profiles, indicators] = await Promise.all([
-    json<{ wallet: WalletData; analysis: { source: string; sources?: string[]; ruleVersion: string; mappingVersion: string; providerDataCutoff: string | null } }>(`/api/v1/analyses/${created.analysisId}/data`, { signal }),
+    json<{ wallet: WalletData; analysis: { source: string; sources?: string[]; periodDays: number; ruleVersion: string; mappingVersion: string; providerDataCutoff: string | null } }>(`/api/v1/analyses/${created.analysisId}/data`, { signal }),
     json<{ primaryProfile: string; items: ProfileResult[] }>(`/api/v1/analyses/${created.analysisId}/profiles`, { signal }),
     json<{ score: number; band: string; signals: Array<{ name: string; detected: boolean; value: string }> }>(`/api/v1/analyses/${created.analysisId}/risk-indicators`, { signal }),
   ]);
-  if (!result.wallet || result.wallet.address.toLowerCase() !== address.toLowerCase() || result.wallet.days !== periodDays) {
+  if (!result.wallet || result.wallet.address.toLowerCase() !== address.toLowerCase() || result.wallet.days !== result.analysis.periodDays) {
     throw new Error('The analysis service returned an unexpected wallet result.');
   }
   return { wallet: result.wallet, analysisId: created.analysisId, analysis: result.analysis, profiles, indicators };

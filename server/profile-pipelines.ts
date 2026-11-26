@@ -39,14 +39,6 @@ export type PipelineHistoricalBalance = {
   valueUsd: number;
 };
 
-export type PipelineNftTransfer = {
-  hash: string;
-  timestamp: string;
-  fromAddress: string;
-  toAddress: string;
-  collectionId: string;
-};
-
 export type PipelineDefiPosition = {
   protocolId: string;
   totalValueUsd: number;
@@ -153,42 +145,6 @@ export function reconstructRetainedHoldings(input: {
       grossOutgoingUnits,
       minimumBalance: observed.length ? Math.min(...observed) : 0,
     };
-  });
-}
-
-export function extractNftTrades(input: {
-  wallet: string;
-  transactions: PipelineTransaction[];
-  nftTransfers: PipelineNftTransfer[];
-}) {
-  const wallet = input.wallet.toLowerCase();
-  const transactions = new Map(
-    input.transactions.map((transaction) => [transaction.hash.toLowerCase(), transaction]),
-  );
-  return input.nftTransfers.flatMap((transfer) => {
-    const transaction = transactions.get(transfer.hash.toLowerCase());
-    if (
-      !transaction ||
-      transaction.successful !== true ||
-      (transaction.protocol !== 'OpenSea' && transaction.protocol !== 'Blur')
-    )
-      return [];
-    const buyer = transfer.toAddress.toLowerCase();
-    const seller = transfer.fromAddress.toLowerCase();
-    if (buyer !== wallet && seller !== wallet) return [];
-    const hasPayment = (transaction.nativeAmount ?? 0) > 0 ||
-      [...transaction.tokensSent, ...transaction.tokensReceived].some(
-        (token) => token.valueUsd > 0 || token.amount > 0,
-      );
-    if (!hasPayment) return [];
-    return [{
-      hash: transfer.hash.toLowerCase(),
-      timestamp: transfer.timestamp,
-      buyerAddress: buyer,
-      sellerAddress: seller,
-      successful: true,
-      collectionId: transfer.collectionId.toLowerCase(),
-    }];
   });
 }
 

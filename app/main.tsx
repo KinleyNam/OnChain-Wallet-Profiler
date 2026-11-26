@@ -5,6 +5,7 @@ import Landing from './landing';
 import './globals.css';
 import './landing.css';
 import './theme.css';
+import './design-refresh.css';
 const Profiler = lazy(() => import('./page'));
 
 class AppErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {

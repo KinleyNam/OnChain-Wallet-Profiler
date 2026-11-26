@@ -31,14 +31,6 @@ type VerifiedDefiAction = {
   protocolId: string;
   actionType: string;
 };
-type VerifiedNftTrade = {
-  hash: string;
-  timestamp: string;
-  buyerAddress: string;
-  sellerAddress: string;
-  successful: boolean;
-  collectionId: string;
-};
 type VerifiedStakingPosition = {
   serviceId: string;
   active: boolean;
@@ -56,14 +48,12 @@ export type VerifiedWalletEvidence = {
     lifetimeTransactions: boolean;
     dexTrades30d: boolean;
     defiActions30d: boolean;
-    nftTrades30d: boolean;
     holdingHistory90d: boolean;
     stakingPositionsAndDeposits: boolean;
   };
   transactions: VerifiedTransaction[];
   dexTrades: VerifiedSwap[];
   defiActions: VerifiedDefiAction[];
-  nftTrades: VerifiedNftTrade[];
   holdings: RetainedHolding[];
   stakingPositions: VerifiedStakingPosition[];
 };
@@ -122,14 +112,6 @@ export function buildClassificationEvidence(
   const defiConsistent =
     !input.coverage.transactions30d ||
     defi30.every((row) => outgoingHashes.has(row.hash.toLowerCase()));
-  const nft30 = input.nftTrades.filter(
-    (row) =>
-      row.successful &&
-      (addressIs(row.buyerAddress, wallet) ||
-        addressIs(row.sellerAddress, wallet)) &&
-      inWindow(row.timestamp, cutoff, 30),
-  );
-  const nftTransactionCount = distinctByHash(nft30).length;
   const lifetime = transactions
     .filter((row) => Date.parse(row.timestamp) < cutoff)
     .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
@@ -187,19 +169,6 @@ export function buildClassificationEvidence(
             actionTypes: [...new Set(defi30.map((row) => row.actionType))],
           }
         : undefined,
-    nftTrader: input.coverage.nftTrades30d
-      ? {
-          tradeTransactions: nftTransactionCount,
-          tradingDays: uniqueDays(nft30),
-          collectionIds: [
-            ...new Set(nft30.map((row) => row.collectionId.toLowerCase())),
-          ],
-          hasPurchases: nft30.some((row) =>
-            addressIs(row.buyerAddress, wallet),
-          ),
-          hasSales: nft30.some((row) => addressIs(row.sellerAddress, wallet)),
-        }
-      : undefined,
     stakingParticipant: input.coverage.stakingPositionsAndDeposits
       ? {
           hasActivePosition: positions.length > 0,

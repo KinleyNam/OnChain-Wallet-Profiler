@@ -1,6 +1,6 @@
 import {
-  Area,
-  AreaChart,
+  Bar,
+  BarChart,
   CartesianGrid,
   ResponsiveContainer,
   Tooltip,
@@ -10,16 +10,17 @@ import {
 
 type ActivityPoint = {
   day: string;
+  range: string;
   transactions: number;
 };
 
-export default function ActivityChart({ data }: { data: ActivityPoint[] }) {
+export default function ActivityChart({ data, timeframe }: { data: ActivityPoint[]; timeframe: string }) {
   return (
     <section className="panel activity-panel">
       <div className="panel-heading">
         <div>
-          <h2>Transaction activity</h2>
-          <p>Transactions per interval</p>
+          <h2>Weekly transaction volume</h2>
+          <p>{timeframe} (UTC)</p>
         </div>
         <span className="legend">
           <i /> Transactions
@@ -27,24 +28,10 @@ export default function ActivityChart({ data }: { data: ActivityPoint[] }) {
       </div>
       <div className="chart">
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart
+          <BarChart
             data={data}
-            margin={{ top: 12, right: 12, left: -22, bottom: 0 }}
+            margin={{ top: 12, right: 16, left: 8, bottom: 24 }}
           >
-            <defs>
-              <linearGradient id="activityFill" x1="0" y1="0" x2="0" y2="1">
-                <stop
-                  offset="0%"
-                  stopColor="var(--chart-line)"
-                  stopOpacity={0.26}
-                />
-                <stop
-                  offset="100%"
-                  stopColor="var(--chart-line)"
-                  stopOpacity={0}
-                />
-              </linearGradient>
-            </defs>
             <CartesianGrid
               vertical={false}
               stroke="var(--border)"
@@ -57,14 +44,20 @@ export default function ActivityChart({ data }: { data: ActivityPoint[] }) {
               tickLine={false}
               minTickGap={45}
               fontSize={12}
+              label={{ value: 'Week starting (UTC)', position: 'insideBottom', offset: -16, fill: 'var(--text-secondary)' }}
             />
             <YAxis
+              width={64}
+              allowDecimals={false}
+              label={{ value: 'Transactions', angle: -90, position: 'insideLeft', fill: 'var(--text-secondary)' }}
               stroke="var(--text-muted)"
               axisLine={false}
               tickLine={false}
               fontSize={12}
             />
             <Tooltip
+              labelFormatter={(label) => data.find((point) => point.day === label)?.range ?? label}
+              formatter={(value) => [Number(value).toLocaleString('en-US'), 'Transactions']}
               contentStyle={{
                 background: 'var(--surface)',
                 border: '1px solid var(--border)',
@@ -72,14 +65,13 @@ export default function ActivityChart({ data }: { data: ActivityPoint[] }) {
                 borderRadius: 8,
               }}
             />
-            <Area
-              type="monotone"
+            <Bar
               dataKey="transactions"
-              stroke="var(--chart-line)"
-              strokeWidth={2.5}
-              fill="url(#activityFill)"
+              fill="#a979ff"
+              radius={[3, 3, 0, 0]}
+              isAnimationActive={false}
             />
-          </AreaChart>
+          </BarChart>
         </ResponsiveContainer>
       </div>
     </section>

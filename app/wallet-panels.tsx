@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -25,8 +25,25 @@ import {
   type WalletData,
 } from '@/lib/wallet-data';
 import './wallet-panels.css';
+import { AllocationCard, MetricCards } from './dashboard-views';
 
 const PAGE_SIZE = 10;
+
+function LedgerSearch({ label, query, onChange }: { label: string; query: string; onChange: (query: string) => void }) {
+  return <input className="ledger-search" type="search" aria-label={label} placeholder={label}
+    value={query} onChange={(event) => onChange(event.target.value)} />;
+}
+
+function matchesSearch(query: string, ...fields: Array<string | undefined | null>) {
+  return fields.some((field) => field?.toLowerCase().includes(query));
+}
+
+const holdingColumns = [
+  ['Asset', 'symbol'], ['Balance', 'balance'], ['Price', 'price'],
+  ['Value', 'value'], ['Allocation', 'allocation'],
+] as const;
+type HoldingSort = (typeof holdingColumns)[number][1];
+
 function Pager({
   page,
   total,
@@ -73,59 +90,56 @@ function Pager({
 
 export function BalancesPanel({ data }: { data: WalletData }) {
   const [page, setPage] = useState(0);
-  const currentPage = Math.min(page, Math.max(0, Math.ceil(data.holdings.length / PAGE_SIZE) - 1));
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<{ column: HoldingSort; ascending: boolean }>({ column: 'value', ascending: false });
+  const holdings = useMemo(() => {
+    const column = sort.column === 'allocation' ? 'value' : sort.column;
+    return data.holdings.filter((holding) => matchesSearch(query.trim().toLowerCase(), holding.symbol, holding.name, holding.tokenAddress))
+      .sort((a, b) => {
+        const comparison = column === 'symbol' ? a.symbol.localeCompare(b.symbol) : a[column] - b[column];
+        return (sort.ascending ? comparison : -comparison) || a.symbol.localeCompare(b.symbol);
+      });
+  }, [data.holdings, query, sort]);
+  const currentPage = Math.min(page, Math.max(0, Math.ceil(holdings.length / PAGE_SIZE) - 1));
+  const stablecoinValue = data.holdings.filter((holding) => ['USDC', 'USDT', 'DAI', 'USDS'].includes(holding.symbol.toUpperCase())).reduce((total, holding) => total + holding.value, 0);
 
   return (
+    <div className="balances-view">
+      <MetricCards items={[
+        { label: 'Total balance', value: usd(data.totalBalance), note: 'Current Ethereum assets' },
+        { label: 'Tokens held', value: data.holdings.length.toLocaleString(), note: 'ETH and ERC-20' },
+        { label: 'Stablecoin share', value: data.totalBalance ? `${(stablecoinValue / data.totalBalance * 100).toFixed(1)}%` : 'Unavailable', note: 'USDC, USDT, DAI, USDS' },
+        { label: 'History records', value: data.historicalBalances.length.toLocaleString(), note: 'Balance snapshots available' },
+      ]} />
+      <div className="design-split balance-split">
+      <AllocationCard data={data} />
     <section className="panel holdings-panel">
       <div className="panel-heading">
         <div>
           <h2>Assets on Ethereum</h2>
           <p>ETH and ERC-20 tokens held on Ethereum · as of {new Date(data.asOf).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}</p>
         </div>
-        <span className="holdings-count">{data.holdings.length} assets</span>
+        <span className="holdings-count">{holdings.length.toLocaleString('en-US')} assets</span>
       </div>
-      <div className="portfolio-total">
-        <span>Total balance</span>
-        <strong>{usd(data.totalBalance)}</strong>
-        <small>Ethereum holdings valued in USD at the snapshot date</small>
-      </div>
-      <div className="balance-coverage">
-        <span>Historical balance records</span>
-        <strong>
-          {data.enrichmentCoverage.historicalBalances
-            ? data.historicalBalances.length.toLocaleString()
-            : 'Unavailable'}
-        </strong>
-        <small>
-          {data.enrichmentCoverage.historicalBalances
-            ? `Across ${new Set(data.historicalBalances.map((item) => item.tokenAddress)).size.toLocaleString()} assets in the selected period`
-            : 'The current balance remains available'}
-        </small>
-      </div>
-      <div className="allocation-bar" aria-hidden="true">
-        {data.holdings.map((h) => (
-          <span
-            key={h.tokenAddress}
-            style={{
-              width: `${data.totalBalance ? (h.value / data.totalBalance) * 100 : 0}%`,
-              background: h.color,
-            }}
-          />
-        ))}
-      </div>
+      <div className="ledger-toolbar"><LedgerSearch label="Search assets" query={query} onChange={(value) => { setQuery(value); setPage(0); }} /></div>
       <Table className="ledger-table">
         <caption className="sr-only">
           Token balances and allocation at the snapshot date
         </caption>
         <TableHeader>
           <TableRow>
-            {['Asset', 'Balance', 'Price', 'Value', 'Allocation'].map((h) => (
-              <TableHead key={h}>{h}</TableHead>
+            {holdingColumns.map(([label, column]) => (
+              <TableHead key={column} aria-sort={sort.column === column ? (sort.ascending ? 'ascending' : 'descending') : undefined}>
+                <button className="ledger-sort" type="button" onClick={() => {
+                  setSort({ column, ascending: sort.column === column ? !sort.ascending : column === 'symbol' });
+                  setPage(0);
+                }}>{label} <span aria-hidden="true">{sort.column === column ? (sort.ascending ? '↑' : '↓') : '↕'}</span></button>
+              </TableHead>
             ))}
           </TableRow>
         </TableHeader>
         <TableBody>
-          {data.holdings.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE).map((h) => (
+          {holdings.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE).map((h) => (
             <TableRow key={h.tokenAddress}>
               <TableCell>
                 <div className="asset-name">
@@ -150,10 +164,13 @@ export function BalancesPanel({ data }: { data: WalletData }) {
               </TableCell>
             </TableRow>
           ))}
+          {!holdings.length && <TableRow><TableCell colSpan={5} className="ledger-empty">No assets found.</TableCell></TableRow>}
         </TableBody>
       </Table>
-      <Pager page={currentPage} total={data.holdings.length} onChange={setPage} />
+      <Pager page={currentPage} total={holdings.length} onChange={setPage} />
     </section>
+      </div>
+    </div>
   );
 }
 
@@ -165,6 +182,7 @@ export function TransactionTable({
   onProtocol?: (name: string) => void;
 }) {
   const [type, setType] = useState('all');
+  const [query, setQuery] = useState('');
   const [page, setPage] = useState(0);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now);
@@ -172,14 +190,16 @@ export function TransactionTable({
     const timer = window.setInterval(() => setNow(Date.now()), 60_000);
     return () => window.clearInterval(timer);
   }, []);
-  const filtered = transactions.filter(
-    (t) => type === 'all' || t.type === type,
-  );
+  const filtered = useMemo(() => transactions.filter(
+    (t) => (type === 'all' || t.type === type) &&
+      matchesSearch(query.trim().toLowerCase(), t.hash, t.type, t.protocol, t.fromAddress, t.toAddress),
+  ).sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp)), [transactions, type, query]);
   const types = [...new Set(transactions.map((t) => t.type))].sort();
   return (
     <div>
       <div className="ledger-toolbar">
-        <span>{transactions.length.toLocaleString()} transactions</span>
+        <span>{filtered.length.toLocaleString('en-US')} transactions</span>
+        <LedgerSearch label="Search transactions" query={query} onChange={(value) => { setQuery(value); setPage(0); setExpanded(null); }} />
         <label>
           Action
           <select
@@ -229,7 +249,7 @@ export function TransactionTable({
           {!filtered.length && (
             <TableRow>
               <TableCell colSpan={6} className="ledger-empty">
-                No transactions match this action.
+                No transactions match the current filters.
               </TableCell>
             </TableRow>
           )}
@@ -348,21 +368,23 @@ function TransactionRows({
 export function MovementPanel({
   movements,
   title = 'Token movements',
-  subtitle = 'ETH and ERC-20 movements for the selected period. Direction does not prove who initiated the transaction.',
+  subtitle = 'ETH and ERC-20 movements across available history. Direction does not prove who initiated the transaction.',
 }: {
   movements: Movement[];
   title?: string;
   subtitle?: string;
 }) {
   const [token, setToken] = useState('all');
+  const [query, setQuery] = useState('');
   const [direction, setDirection] = useState('all');
   const [page, setPage] = useState(0);
   const [copiedHash, setCopiedHash] = useState<string | null>(null);
-  const filtered = movements.filter(
+  const filtered = useMemo(() => movements.filter(
     (m) =>
       (token === 'all' || m.token === token) &&
-      (direction === 'all' || m.direction === direction),
-  );
+      (direction === 'all' || m.direction === direction) &&
+      matchesSearch(query.trim().toLowerCase(), m.hash, m.token, m.tokenAddress, m.from, m.to, m.protocol),
+  ).sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp)), [movements, token, direction, query]);
   async function copyHash(hash: string) {
     try {
       await navigator.clipboard.writeText(hash);
@@ -381,6 +403,7 @@ export function MovementPanel({
         </div>
       </div>
       <div className="ledger-toolbar">
+        <LedgerSearch label="Search movements" query={query} onChange={(value) => { setQuery(value); setPage(0); }} />
         <div className="ledger-filters">
           <label>
             Asset
@@ -391,7 +414,7 @@ export function MovementPanel({
                 setPage(0);
               }}
             >
-              <option value="all">All assets</option>
+              <option value="all">All tokens</option>
               {[...new Set(movements.map((item) => item.token))].sort().map((symbol) => (
                 <option key={symbol}>{symbol}</option>
               ))}
@@ -406,7 +429,7 @@ export function MovementPanel({
                 setPage(0);
               }}
             >
-              <option value="all">All movements</option>
+              <option value="all">Both ways</option>
               <option value="in">Incoming</option>
               <option value="out">Outgoing</option>
             </select>
@@ -490,6 +513,10 @@ export function MovementPanel({
 
 export function FundFlows({ data }: { data: WalletData }) {
   const [page, setPage] = useState(0);
+  const [query, setQuery] = useState('');
+  const flows = useMemo(() => data.flows
+    .filter((flow) => matchesSearch(query.trim().toLowerCase(), flow.name, flow.label))
+    .sort((a, b) => (b.incoming + b.outgoing) - (a.incoming + a.outgoing)), [data.flows, query]);
   const [selected, setSelected] = useState<{
     name: string;
     direction: 'in' | 'out';
@@ -503,7 +530,7 @@ export function FundFlows({ data }: { data: WalletData }) {
     : data.movements;
   const currentPage = Math.min(
     page,
-    Math.max(0, Math.ceil(data.flows.length / PAGE_SIZE) - 1),
+    Math.max(0, Math.ceil(flows.length / PAGE_SIZE) - 1),
   );
   const flowSource = data.flows[0]?.source;
   const incoming = data.flows.length
@@ -520,7 +547,7 @@ export function FundFlows({ data }: { data: WalletData }) {
         <div className="panel-heading">
           <div>
             <h2>Fund flows</h2>
-            <p>Asset movements on Ethereum · last {data.days} days</p>
+            <p>Asset movements on Ethereum · available lifetime history</p>
           </div>
         </div>
         <div className="flow-totals">
@@ -546,6 +573,7 @@ export function FundFlows({ data }: { data: WalletData }) {
           {data.movements.some((movement) => movement.usdPriceSource === 'alchemy-daily') &&
             ' Alchemy daily historical prices make these USD values estimates.'}
         </p>
+        <div className="ledger-toolbar"><LedgerSearch label="Search counterparties" query={query} onChange={(value) => { setQuery(value); setPage(0); setSelected(null); }} /></div>
         <Table className="ledger-table flow-table">
           <caption className="sr-only">
             Incoming and outgoing fund-flow totals by counterparty
@@ -559,7 +587,7 @@ export function FundFlows({ data }: { data: WalletData }) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {data.flows
+            {flows
               .slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE)
               .map((f) => (
               <TableRow key={f.name}>
@@ -608,16 +636,16 @@ export function FundFlows({ data }: { data: WalletData }) {
                 <TableCell>{flowValue(f.incoming + f.outgoing)}</TableCell>
               </TableRow>
             ))}
-            {!data.flows.length && (
+            {!flows.length && (
               <TableRow>
                 <TableCell colSpan={4} className="ledger-empty">
-                  No valued fund flows were found in this period.
+                {query.trim() ? 'No counterparties match your search.' : 'No valued fund flows were found in the available history.'}
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
-        <Pager page={currentPage} total={data.flows.length} onChange={setPage} />
+        <Pager page={currentPage} total={flows.length} onChange={setPage} />
         <p className="flow-source">
           {flowSource === 'nansen-counterparties'
             ? 'Counterparty totals supplied by Nansen’s dedicated counterparty analysis.'
@@ -635,16 +663,12 @@ export function FundFlows({ data }: { data: WalletData }) {
           </button>
         </div>
       )}
-      <MovementPanel
-        key={selected ? `${selected.name}-${selected.direction}` : 'all'}
+      {selected && <MovementPanel
+        key={`${selected.name}-${selected.direction}`}
         movements={filtered}
         title="Transfers behind these flows"
-        subtitle={
-          selected
-            ? `Showing ${selected.direction === 'in' ? 'incoming' : 'outgoing'} transfers ${selected.direction === 'in' ? 'from' : 'to'} ${selected.name}.`
-            : 'Inspect the transfers included in the flow table.'
-        }
-      />
+        subtitle={`Showing ${selected.direction === 'in' ? 'incoming' : 'outgoing'} transfers ${selected.direction === 'in' ? 'from' : 'to'} ${selected.name}.`}
+      />}
     </>
   );
 }

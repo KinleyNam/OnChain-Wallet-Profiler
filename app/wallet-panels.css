@@ -110,6 +110,14 @@
   gap: 16px;
 }
 .movements-panel .ledger-toolbar { justify-content: flex-end; }
+.ledger-toolbar { flex-wrap: wrap; }
+.ledger-search { width: min(100%, 240px); padding: 8px 12px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); color: var(--foreground); }
+.ledger-search::placeholder { color: var(--text-secondary); }
+.ledger-toolbar select:hover, .ledger-search:hover { border-color: var(--accent-text); }
+.ledger-sort { display: inline-flex; align-items: center; gap: 5px; padding: 4px 2px; font: inherit; color: inherit; cursor: pointer; }
+.ledger-sort:hover, th[aria-sort] .ledger-sort { color: var(--accent-text); }
+.ledger-pagination button:enabled:hover { border-color: var(--accent-text); background: var(--accent-soft); }
+.ledger-pagination button:disabled { cursor: default; }
 .ledger-link {
   color: var(--accent-text);
   background: transparent;
